@@ -1,4 +1,4 @@
-ෂ්ෂ්import streamlit as st
+import streamlit as st
 import ccxt
 import pandas as pd
 import pandas_ta as ta
@@ -7,7 +7,6 @@ import time
 import os
 
 # --- 1. CONFIGURATION (BRANDING) ---
-# මෙතනින් තමයි App එකේ නම සහ Icon එක තීරණය වෙන්නේ
 st.set_page_config(
     page_title="KillZone Pro Trading",
     page_icon="logo.png",
@@ -36,7 +35,6 @@ def create_card_html(sig, score, lev, price, reasons, tps, sl, tp_rois, sl_roi):
     color = "sig-long" if sig == "LONG" else "sig-short"
     reasons_txt = " | ".join(reasons)
     
-    # HTML String Construction
     html = f"""
     <div class="signal-box">
         <div style="color:#FCD535; font-size:20px; border-bottom:1px solid #444; margin-bottom:10px;">OFFICIAL SIGNAL 📡</div>
