@@ -33,8 +33,8 @@ st.markdown("""
     .hot-down { color: #F6465D; }
     .title-text { font-size: 35px; font-weight: bold; color: #ffffff; margin-top: 15px; }
     
-    /* STRATEGY BADGES (Small tags for logic) */
-    .strategy-tag { font-size: 11px; padding: 2px 6px; border-radius: 4px; background: #333; color: #aaa; margin-right: 5px; }
+    /* STRATEGY BADGES */
+    .strategy-tag { font-size: 11px; padding: 2px 6px; border-radius: 4px; background: #333; color: #aaa; margin-right: 5px; border: 1px solid #444; display: inline-block; margin-bottom: 2px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -73,8 +73,9 @@ def get_data(symbol, tf, limit=200):
         return df
     except: return pd.DataFrame()
 
-# --- 5. GOD MODE ANALYSIS LOGIC (SMC + ICT + MSNR) ---
+# --- 5. GOD MODE ANALYSIS LOGIC (SMC + ICT + MSNR + NEWS PROXY) ---
 def analyze_god_mode(df):
+    # Indicators
     df['rsi'] = ta.rsi(df['close'], 14)
     df['sma50'] = ta.sma(df['close'], 50)
     df['atr'] = ta.atr(df['high'], df['low'], df['close'], 14)
@@ -82,20 +83,20 @@ def analyze_god_mode(df):
     
     curr = df.iloc[-1]
     
-    # SMC / FVG Logic
+    # 1. SMC / FVG Logic
     fvg_bullish = df.iloc[-3]['high'] < df.iloc[-1]['low'] and df.iloc[-2]['close'] > df.iloc[-2]['open']
     fvg_bearish = df.iloc[-3]['low'] > df.iloc[-1]['high'] and df.iloc[-2]['close'] < df.iloc[-2]['open']
     
-    # MSNR Logic (Support/Resistance)
+    # 2. MSNR Logic (Support/Resistance)
     recent_high = df['high'].rolling(50).max().iloc[-1]
     recent_low = df['low'].rolling(50).min().iloc[-1]
     
-    # Scoring
+    # Scoring System
     score = 50
     reasons = []
     trend = "NEUTRAL"
     
-    # A. Trend
+    # A. Trend Analysis
     if curr['close'] > curr['sma50']: 
         score += 15
         trend = "BULLISH"
@@ -103,7 +104,7 @@ def analyze_god_mode(df):
         score -= 15
         trend = "BEARISH"
         
-    # B. RSI
+    # B. RSI (Momentum)
     if curr['rsi'] < 30: 
         score += 20
         reasons.append("Oversold")
@@ -111,7 +112,7 @@ def analyze_god_mode(df):
         score -= 20
         reasons.append("Overbought")
         
-    # C. SMC
+    # C. SMC (Smart Money Concepts)
     if fvg_bullish:
         score += 15
         reasons.append("FVG Bull")
@@ -127,7 +128,17 @@ def analyze_god_mode(df):
         score -= 10
         reasons.append("Resist Reject")
 
-    # Final Signal
+    # E. Fundamental News Proxy (Volume Spike)
+    # If current volume is 50% higher than average -> Assume News/Whale Activity
+    if curr['volume'] > (curr['vol_sma'] * 1.5):
+        if curr['close'] > curr['open']:
+            score += 10
+            reasons.append("High Vol (News?)")
+        else:
+            score -= 10
+            reasons.append("High Vol (News?)")
+
+    # Final Signal Decision
     sig = "NEUTRAL"
     if score >= 65: sig = "LONG"
     elif score <= 35: sig = "SHORT"
@@ -137,6 +148,7 @@ def analyze_god_mode(df):
 def calc_trade(sig, price, atr):
     if sig == "NEUTRAL": return 1, 0, [0]*4, [0]*4, 0
     
+    # Adaptive Stop Loss
     sl_dist = atr * 1.5 
     if sig == "LONG":
         sl = price - sl_dist
@@ -148,6 +160,7 @@ def calc_trade(sig, price, atr):
         tps = [price - risk*1.5, price - risk*2.5, price - risk*3.5, price - risk*4.5]
         
     risk_pct = (risk / price)
+    # Auto Leverage
     lev = min(int(0.60 / risk_pct), 75) if risk_pct > 0 else 5
     lev = max(1, lev)
     
@@ -196,7 +209,7 @@ with c_title:
 
 # MAIN CONTENT
 if st.button("START ANALYSIS 🚀"):
-    with st.spinner('Running GOD MODE Analysis...'):
+    with st.spinner('Running GOD MODE Analysis (SMC+ICT+News)...'):
         df = get_data(symbol, tf)
     
     if not df.empty:
