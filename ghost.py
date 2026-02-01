@@ -7,7 +7,7 @@ import requests
 import pytz
 from datetime import datetime
 
-# --- 1. පෞද්ගලික තොරතුරු (හිස්තැන් ඉවත් කළ Keys) ---
+# --- 1. පෞද්ගලික තොරතුරු (Spaces ඉවත් කර නිවැරදි කර ඇත) ---
 BINANCE_API_KEY = "FqcL7DzJDdHE9O40C3uqGbbRvABuDB5tcl3TdNumxlud2Sp893itdtlloMiLAScW"
 BINANCE_SECRET_KEY = "egshKJYbxZGvysWuEUmim5nmlV5uYzCTYKS3GP94SjSMIFcL2SNmbOhQEUJNU85p"
 
@@ -16,16 +16,16 @@ CHANNEL_ID = "-1003731551541"
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWIMq--iOTVBE4BA"
 
 # --- 2. SETUP ---
-st.set_page_config(page_title="Ghost Protocol: GOD MODE", page_icon="👻", layout="wide")
+st.set_page_config(page_title="Ghost Protocol: 24/7 GOD MODE", page_icon="👻", layout="wide")
 lz = pytz.timezone('Asia/Colombo')
 
-# Binance Futures සම්බන්ධතාවය
+# Binance Futures සම්බන්ධතාවය (Hostname ඇතුළත් කර ඇත)
 exchange = ccxt.binance({
     'apiKey': BINANCE_API_KEY,
     'secret': BINANCE_SECRET_KEY,
     'enableRateLimit': True,
     'options': {'defaultType': 'future'},
-    'hostname': 'fapi.binance.com', # Block වීම් මගහැරීමට
+    'hostname': 'fapi.binance.com',
     'adjustForTimeDifference': True
 })
 
@@ -54,35 +54,34 @@ def analyze_market(symbol):
 
 # --- 4. MAIN APP ---
 def main():
-    st.title("👻 GHOST PROTOCOL : GOD MODE ENGINE")
+    st.title("👻 GHOST PROTOCOL : 24/7 GOD MODE")
     
+    # Live Status Check
     try:
         exchange.fetch_balance()
         st.success("System Status: ✅ Connected & Scanning Binance Futures")
     except Exception as e:
-        st.error(f"System Status: ❌ Connection Error - Keys නිවැරදිව පරීක්ෂා කරන්න.")
+        st.error(f"System Status: ❌ Connection Error - API Keys හරියාකාරව සක්‍රීය නැත.")
 
     if 'active' not in st.session_state: st.session_state.active = True
 
     while st.session_state.active:
-        now = datetime.now(lz)
-        # කාල නීතිය: උදේ 7 - රෑ 9
-        if 7 <= now.hour < 21:
-            try:
-                markets = exchange.load_markets()
-                symbols = [s for s in markets if '/USDT' in s]
-                for symbol in symbols[:15]: 
-                    sig, score, price, atr = analyze_market(symbol)
-                    if sig != "WAIT":
-                        msg = f"<b>🔥 GOD MODE: {symbol}</b>\n\nSide: {sig}\nScore: {score}%\nPrice: {price}\nSL: {price - (atr*2):.4f}"
-                        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/"
-                        requests.post(url + "sendSticker", data={"chat_id": CHANNEL_ID, "sticker": STICKER_ID})
-                        requests.post(url + "sendMessage", data={"chat_id": CHANNEL_ID, "text": msg, "parse_mode": "HTML"})
-            except: pass
-            time.sleep(900)
-        else:
-            st.info("🌙 Night Mode (Scanning Paused)")
-            time.sleep(60)
+        # ⚠️ කාල සීමාව ඉවත් කර ඇත - පැය 24ම වැඩ කරයි
+        try:
+            markets = exchange.load_markets()
+            symbols = [s for s in markets if '/USDT' in s]
+            
+            for symbol in symbols[:20]: 
+                sig, score, price, atr = analyze_market(symbol)
+                if sig != "WAIT":
+                    msg = f"<b>🔥 GOD MODE: {symbol}</b>\n\nSide: {sig}\nScore: {score}%\nPrice: {price}\nSL: {price - (atr*2):.4f}"
+                    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/"
+                    requests.post(url + "sendSticker", data={"chat_id": CHANNEL_ID, "sticker": STICKER_ID})
+                    requests.post(url + "sendMessage", data={"chat_id": CHANNEL_ID, "text": msg, "parse_mode": "HTML"})
+        except: pass
+        
+        # විනාඩි 15කට සැරයක් ස්කෑන් කරයි
+        time.sleep(900)
 
 if __name__ == "__main__":
     main()
