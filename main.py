@@ -31,7 +31,6 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 3. HELPER FUNCTION: CREATE SIGNAL CARD ---
-# HTML කොටස වෙනම function එකක් විදිහට හැදුවා error එන එක නවත්තන්න
 def create_card_html(sig, score, lev, price, reasons, tps, sl, tp_rois, sl_roi):
     color = "sig-long" if sig == "LONG" else "sig-short"
     reasons_txt = " | ".join(reasons)
