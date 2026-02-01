@@ -1,7 +1,9 @@
-streamlit
+ෂstreamlit
 ccxt
 pandas
 pandas_ta
 plotly
 numpy
+
 requests
+cryptography
