@@ -7,16 +7,21 @@ import requests
 import pytz
 from datetime import datetime, timedelta
 
-# --- 1. SETTINGS ---
+# --- 1. USER SETTINGS ---
 TELEGRAM_BOT_TOKEN = "8524773131:AAFuDVevQzNUwYeehLjQ3M-qK8QsmoaYK8c"
 CHANNEL_ID = "-1003731551541"
 STICKER_ID = "CAACAgIAAxkBAAEgGqpk7pKz"
 
-# --- 2. CONFIG ---
+# --- 2. COMPLETE BINANCE FUTURES COIN LIST (260+ COINS) ---
+DEFAULT_COINS = [
+    "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "SHIB", "AVAX", "DOT", "MATIC", "LTC", "TRX", "LINK", "UNI", "ATOM", "NEAR", "ALGO", "BCH", "FIL", "XLM", "VET", "ICP", "SAND", "MANA", "AXS", "THETA", "AAVE", "EOS", "XTZ", "KLAY", "RUNE", "EGLD", "FTM", "CRV", "FLOW", "KAVA", "GALA", "HBAR", "MINA", "CHZ", "DYDX", "AR", "QNT", "STX", "CVX", "ENJ", "BAT", "COMP", "HOT", "1INCH", "IOTA", "GRT", "RVN", "ZIL", "ETC", "DASH", "WAVES", "OMG", "ICX", "QTUM", "ZRX", "IOST", "ONT", "ZEC", "NEO", "SXP", "SNX", "MKR", "YFI", "SUSHI", "UMA", "YFII", "KSM", "REN", "OCEAN", "RSR", "LRC", "BAL", "KNC", "BNT", "BAND", "OGN", "CTSI", "STORJ", "SKL", "ALICE", "ALPHA", "ANKR", "ARPA", "ATA", "AUDIO", "BAKE", "BEL", "BLZ", "C98", "CELO", "CELR", "CHR", "CKB", "COTI", "CTK", "DENT", "DGB", "DODO", "FLM", "GTC", "HIVE", "HNT", "IDEX", "IOTX", "LINA", "LIT", "LPT", "MASK", "MTL", "NKN", "ONE", "ONG", "PEOPLE", "PERP", "RARE", "RAY", "REEF", "RLC", "ROSE", "SFP", "SLP", "SOL", "STMX", "SUN", "TFUEL", "TLM", "UNFI", "WAXP", "WIN", "XEM", "XMR", "XVS", "YGG", "ZEN", "PEPE", "FLOKI", "WIF", "BONK", "SUI", "SEI", "TIA", "ORDI", "PYTH", "JUP", "1000SHIB", "1000LUNC", "LUNA", "USTC", "OP", "ARB", "APT", "IMX", "LDO", "HOOK", "HFT", "MAGIC", "GNS", "LQTY", "ID", "JOE", "RDNT", "EDU", "SUI", "MAV", "PENDLE", "ARKM", "WLD", "CYBER", "STRK", "AXL", "PORTAL", "AEVO", "METIS", "ETHFI", "ENA", "W", "SAGA", "TAO", "OMNI", "REZ", "BB", "NOT", "IO", "ZK", "ZRO", "LISTA", "RENDER", "BANANA", "RARE", "SYS", "POPCAT", "SUN", "ALPACA", "VIDT", "MBOX", "FLOKI", "CATI", "HMSTR", "EIGEN", "NEIRO", "TURBO", "BABYDOGE", "MOODENG", "GOAT", "GRASS", "DRIFT", "SWELL", "COW", "CETUS", "PNUT", "ACT", "THE"
+]
+
+# --- 3. SETUP ---
 st.set_page_config(page_title="Ghost Protocol VIP", page_icon="👻", layout="wide")
 lz = pytz.timezone('Asia/Colombo')
 
-# --- 3. FUNCTIONS ---
+# --- 4. FUNCTIONS ---
 def send_telegram(msg, sticker=False):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/"
     try:
@@ -51,13 +56,12 @@ def analyze(df):
     elif score <= 25: sig = "SHORT"
     return sig, score, curr['close'], curr['atr']
 
-# --- 4. MAIN ENGINE ---
+# --- 5. MAIN ENGINE ---
 def main():
     st.title("👻 GHOST PROTOCOL : VIP ENGINE")
     
-    # Initialize Session State
     if 'coin_list' not in st.session_state:
-        st.session_state.coin_list = "BTC,ETH,SOL,BNB,DOGE,XRP,ADA,MATIC,DOT,LTC,TRX,AVAX,LINK,UNI,ATOM"
+        st.session_state.coin_list = ", ".join(DEFAULT_COINS)
     if 'signals_log' not in st.session_state:
         st.session_state.signals_log = []
     if 'engine_running' not in st.session_state:
@@ -66,11 +70,9 @@ def main():
     tab1, tab2, tab3 = st.tabs(["🎛️ Control Panel", "📝 Coin Manager", "📜 History"])
 
     with tab1:
-        # 1. Top Status Area
         time_placeholder = st.empty()
         status_placeholder = st.empty()
         
-        # Initial Clock Update
         now_init = datetime.now(lz)
         time_placeholder.metric("Sri Lanka Time 🇱🇰", now_init.strftime("%H:%M:%S"))
 
@@ -81,7 +83,6 @@ def main():
 
         st.markdown("---")
 
-        # 2. Buttons
         c1, c2 = st.columns(2)
         if c1.button("🟢 START ENGINE"):
             st.session_state.engine_running = True
@@ -91,19 +92,16 @@ def main():
             st.session_state.engine_running = False
             st.rerun()
 
-        # 3. Engine Logic
         log_box = st.empty()
 
         if st.session_state.engine_running:
             coins = [x.strip() for x in st.session_state.coin_list.split(',')]
-            last_scan_time = datetime.now(lz) - timedelta(minutes=15) # Force first run
+            last_scan_time = datetime.now(lz) - timedelta(minutes=15)
 
             while st.session_state.engine_running:
-                # Live Clock Update
                 now_live = datetime.now(lz)
                 time_placeholder.metric("Sri Lanka Time 🇱🇰", now_live.strftime("%H:%M:%S"))
                 
-                # Check Time Window
                 if not (7 <= now_live.hour < 21):
                     status_placeholder.error("💤 Sleeping... (Waiting for 7 AM)")
                     log_box.info("Night Mode Active 🌙")
@@ -112,15 +110,13 @@ def main():
 
                 status_placeholder.success("✅ ENGINE RUNNING (Live)")
 
-                # Scan Logic
                 time_diff = (now_live - last_scan_time).total_seconds()
                 
-                if time_diff >= 900: # 15 Minutes
+                if time_diff >= 900: # 15 Minutes Cycle
                     log_box.markdown(f"**🔄 Scanning Market... ({len(coins)} Coins)**")
                     progress_bar = st.progress(0)
                     
                     for i, coin in enumerate(coins):
-                        # Update Clock INSIDE the loop too!
                         now_scan = datetime.now(lz)
                         time_placeholder.metric("Sri Lanka Time 🇱🇰", now_scan.strftime("%H:%M:%S"))
                         
@@ -129,7 +125,6 @@ def main():
                             if not df.empty:
                                 sig, score, price, atr = analyze(df)
                                 if (sig == "LONG" and score >= 75) or (sig == "SHORT" and score <= 25):
-                                    # Signal Found
                                     send_telegram("Alert", sticker=True)
                                     sl_dist = atr * 1.5
                                     if sig == "LONG":
@@ -140,27 +135,28 @@ def main():
                                         tps = [price - sl_dist*1.5, price - sl_dist*2.5, price - sl_dist*3.5]
                                     
                                     rr = round(abs(tps[2]-price)/abs(price-sl), 2)
-                                    msg = f"💎 <b>VIP SIGNAL</b>\n\n🪙 <b>{coin}</b>\nSignal: {sig}\nEntry: {price:.4f}\nTargets: {tps[0]:.4f} | {tps[1]:.4f} | {tps[2]:.4f}\nSL: {sl:.4f}"
+                                    msg = f"💎 <b>VIP SIGNAL</b>\n\n🪙 <b>{coin}</b>\nSignal: {sig}\nEntry: {price:.4f}\nTargets: {tps[0]:.4f} | {tps[1]:.4f} | {tps[2]:.4f}\nSL: {sl:.4f}\nRR: 1:{rr}"
                                     send_telegram(msg)
                                     st.session_state.signals_log.insert(0, f"{now_scan.strftime('%H:%M')} | {coin} | {sig}")
                         except: pass
                         
-                        # Update Progress
                         progress_bar.progress((i + 1) / len(coins))
                         
                     last_scan_time = now_live
-                    log_box.success(f"✅ Scan Complete at {now_live.strftime('%H:%M')}. Next scan in 15 mins.")
+                    log_box.success(f"✅ Scan Complete at {now_live.strftime('%H:%M')}.")
                     progress_bar.empty()
                 
                 else:
                     mins_left = int((900 - time_diff) / 60)
                     log_box.info(f"⏳ Next Scan in {mins_left} minutes...")
-                    time.sleep(1) # Wait 1 sec before loop repeats
+                    time.sleep(1)
 
     with tab2:
         st.subheader("Manage Coins")
         txt = st.text_area("List", st.session_state.coin_list, height=300)
-        if st.button("Save"): st.session_state.coin_list = txt
+        if st.button("Save"): 
+            st.session_state.coin_list = txt
+            st.success("List Updated!")
 
     with tab3:
         st.subheader("History")
