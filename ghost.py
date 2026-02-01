@@ -21,8 +21,8 @@ lz = pytz.timezone('Asia/Colombo')
 
 # Binance Futures සම්බන්ධතාවය (Hostname ඇතුළත් කර ඇත)
 exchange = ccxt.binance({
-    'apiKey': BINANCE_API_KEY,
-    'secret': BINANCE_SECRET_KEY,
+    'apiKey': "FqcL7DzJDdHE9O40C3uqGbbRvABuDB5tcl3TdNumxlud2Sp893itdtlloMiLAScW"
+    'secret': "egshKJYbxZGvysWuEUmim5nmlV5uYzCTYKS3GP94SjSMIFcL2SNmbOhQEUJNU85p"
     'enableRateLimit': True,
     'options': {'defaultType': 'future'},
     'hostname': 'fapi.binance.com',
