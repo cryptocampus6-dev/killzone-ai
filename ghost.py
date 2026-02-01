@@ -8,7 +8,7 @@ import pytz
 from datetime import datetime
 
 # --- 1. පෞද්ගලික තොරතුරු (ඔයා එවපු අලුත්ම Keys) ---
-# මැනික, මම Keys වල තිබුණ හිස්තැන් (Spaces) අයින් කරලා හරියටම දාලා තියෙන්නේ.
+# මැනික, මම Keys වල තිබුණ අනවශ්‍ය හිස්තැන් (Spaces) අයින් කරලා හරියටම දාලා තියෙන්නේ.
 BINANCE_API_KEY = "FqcL7DzJDdHE9O40C3uqGbbR vABuDB5tcl3TdNumxlud2Sp893i tdtlloMiLAScW".replace(" ", "")
 BINANCE_SECRET_KEY = "egshKJYbxZGvysWuEUmim5nml V5uYzCTYKS3GP94SjSMIFcL2SN mbOhQEUJNU85p".replace(" ", "")
 
@@ -58,14 +58,15 @@ def main():
         # සම්බන්ධතාවය පරීක්ෂා කිරීම
         exchange.fetch_balance()
         st.success("System Status: ✅ Connected & Scanning Binance Futures")
-    except Exception as e:
-        st.error(f"System Status: ❌ Connection Error - API Keys හරියාකාරව ක්‍රියා නොකරයි හෝ Binance Block වී ඇත.")
+    except Exception:
+        st.error("System Status: ❌ Connection Error - API Keys හරියාකාරව ක්‍රියා නොකරයි හෝ Binance Block වී ඇත.") #
 
     if 'active' not in st.session_state: st.session_state.active = True
 
     while st.session_state.active:
         now = datetime.now(lz)
-        if 7 <= now.hour < 21: # උදේ 7 - රෑ 9
+        # කාල නීතිය: උදේ 7 - රෑ 9
+        if 7 <= now.hour < 21:
             try:
                 markets = exchange.load_markets()
                 symbols = [s for s in markets if '/USDT' in s]
@@ -77,9 +78,9 @@ def main():
                         requests.post(url + "sendSticker", data={"chat_id": CHANNEL_ID, "sticker": STICKER_ID})
                         requests.post(url + "sendMessage", data={"chat_id": CHANNEL_ID, "text": msg, "parse_mode": "HTML"})
             except: pass
-            time.sleep(900) # විනාඩි 15යි
+            time.sleep(900)
         else:
-            st.info("🌙 Night Mode (Scanning Paused)")
+            st.info("🌙 Night Mode (Scanning Paused)") #
             time.sleep(60)
 
 if __name__ == "__main__":
