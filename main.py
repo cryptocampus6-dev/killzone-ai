@@ -6,15 +6,16 @@ import plotly.graph_objects as go
 import time
 import os
 
-# --- 1. CONFIGURATION (BRANDING) ---
+# --- 1. BRANDING & CONFIGURATION ---
+# මෙන්න මෙතනින් තමයි Install කරද්දි නමයි ලෝගෝ එකයි හැදෙන්නේ
 st.set_page_config(
-    page_title="KillZone Pro Trading",
-    page_icon="logo.png",
-    layout="wide",
+    page_title="KillZone AI", 
+    page_icon="logo.png", 
+    layout="wide", 
     initial_sidebar_state="expanded"
 )
 
-# --- 2. STYLES ---
+# --- 2. CUSTOM STYLES ---
 st.markdown("""
     <style>
     .stApp { background-color: #0b0e11; color: #eaecef; }
@@ -30,7 +31,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. HTML GENERATOR (ERROR-PROOF) ---
+# --- 3. HTML CARD GENERATOR (CLEAN CODE) ---
 def create_card_html(sig, score, lev, price, reasons, tps, sl, tp_rois, sl_roi):
     color = "sig-long" if sig == "LONG" else "sig-short"
     reasons_txt = " | ".join(reasons)
@@ -53,7 +54,7 @@ def create_card_html(sig, score, lev, price, reasons, tps, sl, tp_rois, sl_roi):
     """
     return html
 
-# --- 4. EXCHANGE SETUP ---
+# --- 4. EXCHANGE CONNECTION ---
 try:
     exchange = ccxt.mexc({'enableRateLimit': True, 'options': {'defaultType': 'swap'}})
 except:
@@ -87,7 +88,7 @@ def get_data(symbol, tf, limit=200):
         return df
     except: return pd.DataFrame()
 
-# --- 6. ANALYSIS LOGIC (GOD MODE) ---
+# --- 6. GOD MODE LOGIC ---
 def analyze_god_mode(df):
     df['rsi'] = ta.rsi(df['close'], 14)
     df['sma50'] = ta.sma(df['close'], 50)
@@ -98,7 +99,6 @@ def analyze_god_mode(df):
     score = 50
     reasons = []
     
-    # Trend
     if curr['close'] > curr['sma50']: 
         score += 15
         trend = "BULLISH"
@@ -106,7 +106,6 @@ def analyze_god_mode(df):
         score -= 15
         trend = "BEARISH"
         
-    # RSI
     if curr['rsi'] < 30: 
         score += 20
         reasons.append("Oversold")
@@ -114,7 +113,6 @@ def analyze_god_mode(df):
         score -= 20
         reasons.append("Overbought")
 
-    # Volume/News
     if curr['volume'] > (curr['vol_sma'] * 1.5):
         reasons.append("High Vol (News?)")
         if curr['close'] > curr['open']: score += 10
@@ -147,7 +145,7 @@ def calc_trade(sig, price, atr):
     
     return lev, sl, tps, tp_rois, sl_roi
 
-# --- 7. MAIN APP UI ---
+# --- 7. MAIN UI ---
 def main():
     with st.sidebar:
         st.markdown("### ⚙️ SETTINGS")
@@ -169,35 +167,14 @@ def main():
     with c1: 
         if os.path.exists("logo.png"): st.image("logo.png", width=100)
         else: st.markdown("🚀")
-    with c2: st.markdown(f"<div class='title-text'>KILLZONE PRO: {symbol.split(':')[0]} [{tf}]</div>", unsafe_allow_html=True)
+    with c2: st.markdown(f"<div class='title-text'>KILLZONE AI | {symbol.split(':')[0]}</div>", unsafe_allow_html=True)
 
-    if st.button("START ANALYSIS 🚀"):
-        with st.spinner('Analyzing...'):
+    if st.button("RUN GOD MODE ANALYSIS ⚡"):
+        with st.spinner('Analyzing Markets...'):
             df = get_data(symbol, tf)
         
         if not df.empty:
             sig, score, price, atr, reasons = analyze_god_mode(df)
             lev, sl, tps, tp_rois, sl_roi = calc_trade(sig, price, atr)
             
-            col1, col2 = st.columns([1, 2])
-            with col1:
-                if sig != "NEUTRAL":
-                    # Generating HTML safely
-                    html_code = create_card_html(sig, score, lev, price, reasons, tps, sl, tp_rois, sl_roi)
-                    st.markdown(html_code, unsafe_allow_html=True)
-                else: 
-                    st.warning("Neutral Market - No Trade")
-                
-            with col2:
-                fig = go.Figure(data=[go.Candlestick(x=df['timestamp'], open=df['open'], high=df['high'], low=df['low'], close=df['close'])])
-                fig.update_layout(template="plotly_dark", height=600, title=f"{symbol.split(':')[0]} CHART", xaxis_rangeslider_visible=False)
-                fig.add_trace(go.Scatter(x=df['timestamp'], y=df['sma50'], line=dict(color='yellow', width=1), name='Trend'))
-                if sig != "NEUTRAL":
-                    fig.add_hline(y=price, line_color="white", line_dash="dash")
-                    fig.add_hline(y=tps[0], line_color="#0ECB81", line_dash="dot")
-                    fig.add_hline(y=sl, line_color="#F6465D")
-                st.plotly_chart(fig, use_container_width=True)
-        else: st.error("Data Error. Try another coin.")
-
-if __name__ == "__main__":
-    main()
+            col1, col
