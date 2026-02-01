@@ -1,4 +1,4 @@
-import streamlit as st
+ෂ්ෂ්import streamlit as st
 import ccxt
 import pandas as pd
 import pandas_ta as ta
@@ -6,7 +6,8 @@ import plotly.graph_objects as go
 import time
 import os
 
-# --- 1. CONFIGURATION ---
+# --- 1. CONFIGURATION (BRANDING) ---
+# මෙතනින් තමයි App එකේ නම සහ Icon එක තීරණය වෙන්නේ
 st.set_page_config(
     page_title="KillZone Pro Trading",
     page_icon="logo.png",
@@ -30,12 +31,13 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. HELPER FUNCTION: CREATE SIGNAL CARD ---
+# --- 3. HTML GENERATOR (ERROR-PROOF) ---
 def create_card_html(sig, score, lev, price, reasons, tps, sl, tp_rois, sl_roi):
     color = "sig-long" if sig == "LONG" else "sig-short"
     reasons_txt = " | ".join(reasons)
     
-    return f"""
+    # HTML String Construction
+    html = f"""
     <div class="signal-box">
         <div style="color:#FCD535; font-size:20px; border-bottom:1px solid #444; margin-bottom:10px;">OFFICIAL SIGNAL 📡</div>
         <div style="display:flex; justify-content:space-between; margin-bottom:5px;"><span>TYPE</span><span class="{color}" style="font-size:22px; font-weight:bold">{sig}</span></div>
@@ -51,6 +53,7 @@ def create_card_html(sig, score, lev, price, reasons, tps, sl, tp_rois, sl_roi):
         <div style="display:flex; justify-content:space-between;"><span>STOP</span><span class="sig-short">${sl:.5f} <span style="font-size:11px">({sl_roi:.0f}%)</span></span></div>
     </div>
     """
+    return html
 
 # --- 4. EXCHANGE SETUP ---
 try:
@@ -97,6 +100,7 @@ def analyze_god_mode(df):
     score = 50
     reasons = []
     
+    # Trend
     if curr['close'] > curr['sma50']: 
         score += 15
         trend = "BULLISH"
@@ -104,6 +108,7 @@ def analyze_god_mode(df):
         score -= 15
         trend = "BEARISH"
         
+    # RSI
     if curr['rsi'] < 30: 
         score += 20
         reasons.append("Oversold")
@@ -111,6 +116,7 @@ def analyze_god_mode(df):
         score -= 20
         reasons.append("Overbought")
 
+    # Volume/News
     if curr['volume'] > (curr['vol_sma'] * 1.5):
         reasons.append("High Vol (News?)")
         if curr['close'] > curr['open']: score += 10
@@ -178,7 +184,7 @@ def main():
             col1, col2 = st.columns([1, 2])
             with col1:
                 if sig != "NEUTRAL":
-                    # Call the HTML function here
+                    # Generating HTML safely
                     html_code = create_card_html(sig, score, lev, price, reasons, tps, sl, tp_rois, sl_roi)
                     st.markdown(html_code, unsafe_allow_html=True)
                 else: 
