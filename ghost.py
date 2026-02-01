@@ -10,12 +10,11 @@ from datetime import datetime, timedelta
 # --- 1. USER SETTINGS ---
 TELEGRAM_BOT_TOKEN = "8524773131:AAFuDVevQzNUwYeehLjQ3M-qK8QsmoaYK8c"
 CHANNEL_ID = "-1003731551541"
-# ඔයා එවපු අලුත් ස්ටිකර් ID එක මෙතනට දැම්මා
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWIMq--iOTVBE4BA"
 
 # --- 2. COMPLETE BINANCE FUTURES COIN LIST ---
 DEFAULT_COINS = [
-    "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "SHIB", "AVAX", "DOT", "MATIC", "LTC", "TRX", "LINK", "UNI", "ATOM", "NEAR", "ALGO", "BCH", "FIL", "XLM", "VET", "ICP", "SAND", "MANA", "AXS", "THETA", "AAVE", "EOS", "XTZ", "KLAY", "RUNE", "EGLD", "FTM", "CRV", "FLOW", "KAVA", "GALA", "HBAR", "MINA", "CHZ", "DYDX", "AR", "QNT", "STX", "CVX", "ENJ", "BAT", "COMP", "HOT", "1INCH", "IOTA", "GRT", "RVN", "ZIL", "ETC", "DASH", "WAVES", "OMG", "ICX", "QTUM", "ZRX", "IOST", "ONT", "ZEC", "NEO", "SXP", "SNX", "MKR", "YFI", "SUSHI", "UMA", "YFII", "KSM", "REN", "OCEAN", "RSR", "LRC", "BAL", "KNC", "BNT", "BAND", "OGN", "CTSI", "STORJ", "SKL", "ALICE", "ALPHA", "ANKR", "ARPA", "ATA", "AUDIO", "BAKE", "BEL", "BLZ", "C98", "CELO", "CELR", "CHR", "CKB", "COTI", "CTK", "DENT", "DGB", "DODO", "FLM", "GTC", "HIVE", "HNT", "IDEX", "IOTX", "KAVA", "LINA", "LIT", "LPT", "MASK", "MTL", "NKN", "ONE", "ONG", "PEOPLE", "PERP", "RARE", "RAY", "REEF", "RLC", "ROSE", "SFP", "SLP", "SOL", "STMX", "SUN", "TFUEL", "TLM", "UNFI", "WAXP", "WIN", "XEM", "XMR", "XVS", "YGG", "ZEN", "PEPE", "FLOKI", "WIF", "BONK", "SUI", "SEI", "TIA", "ORDI", "PYTH", "JUP", "1000SHIB", "1000LUNC", "LUNA", "USTC", "OP", "ARB", "APT", "IMX", "LDO", "HOOK", "HFT", "MAGIC", "GNS", "LQTY", "ID", "JOE", "RDNT", "EDU", "SUI", "MAV", "PENDLE", "ARKM", "WLD", "CYBER", "STRK", "AXL", "PORTAL", "AEVO", "METIS", "ETHFI", "ENA", "W", "SAGA", "TAO", "OMNI", "REZ", "BB", "NOT", "IO", "ZK", "ZRO", "LISTA", "RENDER", "BANANA", "RARE", "SYS", "POPCAT", "SUN", "ALPACA", "VIDT", "MBOX", "FLOKI", "CATI", "HMSTR", "EIGEN", "NEIRO", "TURBO", "BABYDOGE", "MOODENG", "GOAT", "GRASS", "DRIFT", "SWELL", "COW", "CETUS", "PNUT", "ACT", "THE"
+    "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "SHIB", "AVAX", "DOT", "MATIC", "LTC", "TRX", "LINK", "UNI", "ATOM", "NEAR", "ALGO", "BCH", "FIL", "XLM", "VET", "ICP", "SAND", "MANA", "AXS", "THETA", "AAVE", "EOS", "XTZ", "KLAY", "RUNE", "EGLD", "FTM", "CRV", "FLOW", "KAVA", "GALA", "HBAR", "MINA", "CHZ", "DYDX", "AR", "QNT", "STX", "CVX", "ENJ", "BAT", "COMP", "HOT", "1INCH", "IOTA", "GRT", "RVN", "ZIL", "ETC", "DASH", "WAVES", "OMG", "ICX", "QTUM", "ZRX", "IOST", "ONT", "ZEC", "NEO", "SXP", "SNX", "MKR", "YFI", "SUSHI", "UMA", "YFII", "KSM", "REN", "OCEAN", "RSR", "LRC", "BAL", "KNC", "BNT", "BAND", "OGN", "CTSI", "STORJ", "SKL", "ALICE", "ALPHA", "ANKR", "ARPA", "ATA", "AUDIO", "BAKE", "BEL", "BLZ", "C98", "CELO", "CELR", "CHR", "CKB", "COTI", "CTK", "DENT", "DGB", "DODO", "FLM", "GTC", "HIVE", "HNT", "IDEX", "IOTX", "LINA", "LIT", "LPT", "MASK", "MTL", "NKN", "ONE", "ONG", "PEOPLE", "PERP", "RARE", "RAY", "REEF", "RLC", "ROSE", "SFP", "SLP", "SOL", "STMX", "SUN", "TFUEL", "TLM", "UNFI", "WAXP", "WIN", "XEM", "XMR", "XVS", "YGG", "ZEN", "PEPE", "FLOKI", "WIF", "BONK", "SUI", "SEI", "TIA", "ORDI", "PYTH", "JUP", "1000SHIB", "1000LUNC", "LUNA", "USTC", "OP", "ARB", "APT", "IMX", "LDO", "HOOK", "HFT", "MAGIC", "GNS", "LQTY", "ID", "JOE", "RDNT", "EDU", "SUI", "MAV", "PENDLE", "ARKM", "WLD", "CYBER", "STRK", "AXL", "PORTAL", "AEVO", "METIS", "ETHFI", "ENA", "W", "SAGA", "TAO", "OMNI", "REZ", "BB", "NOT", "IO", "ZK", "ZRO", "LISTA", "RENDER", "BANANA", "RARE", "SYS", "POPCAT", "SUN", "ALPACA", "VIDT", "MBOX", "FLOKI", "CATI", "HMSTR", "EIGEN", "NEIRO", "TURBO", "BABYDOGE", "MOODENG", "GOAT", "GRASS", "DRIFT", "SWELL", "COW", "CETUS", "PNUT", "ACT", "THE"
 ]
 
 # --- 3. SETUP ---
@@ -61,12 +60,15 @@ def analyze(df):
 def main():
     st.title("👻 GHOST PROTOCOL : VIP ENGINE")
     
+    # Session State Initialization
     if 'coin_list' not in st.session_state:
         st.session_state.coin_list = ", ".join(DEFAULT_COINS)
     if 'signals_log' not in st.session_state:
         st.session_state.signals_log = []
+    
+    # 🚨 AUTO-START LOGIC: මෙතන තමයි වැඩේ වෙන්නේ
     if 'engine_running' not in st.session_state:
-        st.session_state.engine_running = False
+        st.session_state.engine_running = True # දැන් ඇප් එක ඕපන් වෙද්දීම මේක True වෙනවා
 
     tab1, tab2, tab3 = st.tabs(["🎛️ Control Panel", "📝 Coin Manager", "📜 History"])
 
@@ -77,19 +79,15 @@ def main():
         now_init = datetime.now(lz)
         time_placeholder.metric("Sri Lanka Time 🇱🇰", now_init.strftime("%H:%M:%S"))
 
-        if 7 <= now_init.hour < 21:
-            status_placeholder.success("✅ MARKET OPEN (Active Hours)")
-        else:
-            status_placeholder.error("💤 MARKET CLOSED (Sleep Mode)")
-
         st.markdown("---")
 
         c1, c2 = st.columns(2)
-        if c1.button("🟢 START ENGINE"):
+        # බොත්තම් තියෙන්නේ ඔයාට ඕන නම් විතරක් වෙනස් කරන්න
+        if c1.button("🟢 MANUAL START"):
             st.session_state.engine_running = True
             st.rerun()
             
-        if c2.button("🔴 STOP ENGINE"):
+        if c2.button("🔴 EMERGENCY STOP"):
             st.session_state.engine_running = False
             st.rerun()
 
@@ -103,13 +101,14 @@ def main():
                 now_live = datetime.now(lz)
                 time_placeholder.metric("Sri Lanka Time 🇱🇰", now_live.strftime("%H:%M:%S"))
                 
+                # Market Hour Logic
                 if not (7 <= now_live.hour < 21):
-                    status_placeholder.error("💤 Sleeping... (Waiting for 7 AM)")
+                    status_placeholder.error("💤 Market Sleep Mode (Waiting for 7 AM)")
                     log_box.info("Night Mode Active 🌙")
                     time.sleep(1)
                     continue
 
-                status_placeholder.success("✅ ENGINE RUNNING (Live)")
+                status_placeholder.success("✅ ENGINE RUNNING (Auto-Active)")
 
                 time_diff = (now_live - last_scan_time).total_seconds()
                 
@@ -140,13 +139,11 @@ def main():
                                     send_telegram(msg)
                                     st.session_state.signals_log.insert(0, f"{now_scan.strftime('%H:%M')} | {coin} | {sig}")
                         except: pass
-                        
                         progress_bar.progress((i + 1) / len(coins))
                         
                     last_scan_time = now_live
                     log_box.success(f"✅ Scan Complete at {now_live.strftime('%H:%M')}.")
                     progress_bar.empty()
-                
                 else:
                     mins_left = int((900 - time_diff) / 60)
                     log_box.info(f"⏳ Next Scan in {mins_left} minutes...")
