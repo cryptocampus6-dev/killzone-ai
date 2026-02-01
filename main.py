@@ -6,9 +6,16 @@ import plotly.graph_objects as go
 import time
 import os
 
-# --- 1. PAGE CONFIGURATION ---
-page_icon = "logo.png" if os.path.exists("logo.png") else "💎"
-st.set_page_config(page_title="KillZone AI - GOD MODE", layout="wide", page_icon=page_icon)
+# --- 1. PAGE CONFIGURATION (BRANDING) ---
+# මෙතනින් තමයි Tab එකේ නම සහ Logo එක වෙනස් වෙන්නේ
+st.set_page_config(
+    page_title="KillZone Pro Trading",  # Tab එකේ වැටෙන නම
+    page_icon="logo.png",               # Tab එකේ අයිකන් එක (ඔයාගේ Logo එක)
+    layout="wide"
+)
+
+# --- 2. CUSTOM CSS (CLASSIC STYLE) ---
+# ... (මෙතැනින් පහළ පරණ කෝඩ් එක දිගටම යන්න ඕන) ...)
 
 # --- 2. CUSTOM CSS (CLASSIC STYLE) ---
 st.markdown("""
@@ -265,3 +272,4 @@ if st.button("START ANALYSIS 🚀"):
         st.error(f"Could not load data for {symbol}.")
 else:
     st.info("Select Coin -> Click START ANALYSIS")
+
