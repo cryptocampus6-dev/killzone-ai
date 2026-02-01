@@ -31,45 +31,45 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. EXCHANGE CONNECTION (BYBIT - WORKS IN USA) ---
-# Bybit allows US server traffic, unlike Binance
+# --- 3. EXCHANGE CONNECTION (MEXC - WORKS IN USA) ---
 try:
-    exchange = ccxt.bybit({
+    # MEXC often allows US IPs for public data
+    exchange = ccxt.mexc({
         'enableRateLimit': True,
-        'options': {'defaultType': 'swap'}  # Swap = Futures
+        'options': {'defaultType': 'swap'} # Futures
     })
 except:
-    exchange = ccxt.kraken() # Backup
+    # Backup: Binance US (Has fewer coins but works)
+    exchange = ccxt.binanceus({'options': {'defaultType': 'spot'}})
 
 # --- 4. DATA FUNCTIONS ---
 @st.cache_data(ttl=3600)
 def get_symbols():
     try:
         mkts = exchange.load_markets(reload=True)
-        # Filter for USDT pairs and clean names
+        # MEXC symbols format: BTC/USDT:USDT
         symbols = [s for s in mkts if "/USDT" in s]
         return symbols
     except: 
-        return ["BTC/USDT:USDT", "ETH/USDT:USDT", "SOL/USDT:USDT"]
+        return ["BTC/USDT:USDT", "ETH/USDT:USDT", "SOL/USDT:USDT", "AI/USDT:USDT"]
 
 @st.cache_data(ttl=60)
 def get_hot_coins():
     try:
         tickers = exchange.fetch_tickers()
-        # Sort by percentage change
-        sorted_t = sorted(tickers.items(), key=lambda x: float(x[1].get('percentage', 0) or 0), reverse=True)
+        # Filter only USDT pairs to clean up list
+        usdt_tickers = {k: v for k, v in tickers.items() if '/USDT' in k}
+        sorted_t = sorted(usdt_tickers.items(), key=lambda x: float(x[1].get('percentage', 0) or 0), reverse=True)
         return sorted_t[:10]
     except: return []
 
 def get_data(symbol, tf, limit=150):
     try:
-        # Bybit needs standardized symbols
         bars = exchange.fetch_ohlcv(symbol, tf, limit=limit)
         df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         return df
-    except Exception as e:
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
 # --- 5. SIGNAL LOGIC ---
 def analyze(df):
@@ -89,7 +89,6 @@ def analyze(df):
 def calc_trade(sig, price, atr):
     if sig == "NEUTRAL": return 1, 0, [0]*4, [0]*4, 0
     
-    # Dynamic Leverage based on Volatility
     sl_dist = atr * 1.5
     if sig == "LONG":
         sl = price - sl_dist
@@ -104,7 +103,6 @@ def calc_trade(sig, price, atr):
     lev = min(int(0.60 / risk_pct), 75) if risk_pct > 0 else 5
     lev = max(1, lev)
     
-    # ROI Calc
     def get_roi(entry, target, lev):
         return abs((target - entry) / entry) * lev * 100
         
@@ -117,20 +115,20 @@ def calc_trade(sig, price, atr):
 with st.sidebar:
     st.markdown("### ⚙️ SETTINGS")
     
-    # Get symbols
     all_syms = get_symbols()
-    if not all_syms: all_syms = ["BTC/USDT:USDT"]
+    # Ensure AI is in the list manually if not fetched
+    if "AI/USDT:USDT" not in all_syms: all_syms.append("AI/USDT:USDT")
     
     search_mode = st.radio("Search Mode:", ["List Select", "Type Manually"], horizontal=True)
     if search_mode == "List Select":
         symbol = st.selectbox("COIN", all_syms, index=0)
     else:
-        user_input = st.text_input("TYPE COIN (e.g. BTC, ETH)", "BTC")
-        symbol = f"{user_input.upper()}/USDT:USDT" # Auto-format for Bybit
+        user_input = st.text_input("TYPE COIN (e.g. BTC, AI)", "BTC")
+        symbol = f"{user_input.upper()}/USDT:USDT" 
     
-    tf = st.selectbox("TIMEFRAME", ["1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d"], index=3)
+    tf = st.selectbox("TIMEFRAME", ["1m", "5m", "15m", "30m", "1h", "4h", "1d"], index=2)
     
-    st.markdown("### 🔥 HOT COINS")
+    st.markdown("### 🔥 HOT COINS (MEXC)")
     hot_list = get_hot_coins()
     if hot_list:
         for s, d in hot_list:
@@ -142,7 +140,6 @@ with st.sidebar:
     else:
         st.write("Loading data...")
 
-# --- HEADER ---
 c_logo, c_title = st.columns([1, 8])
 with c_logo:
     if os.path.exists("logo.png"): st.image("logo.png", width=100)
@@ -152,9 +149,8 @@ with c_title:
     display_sym = symbol.split(':')[0]
     st.markdown(f"<div class='title-text'>KILLZONE PRO: {display_sym} [{tf}]</div>", unsafe_allow_html=True)
 
-# --- MAIN ---
 if st.button("START ANALYSIS 🚀"):
-    with st.spinner('Fetching market data from Bybit...'):
+    with st.spinner('Fetching market data from MEXC...'):
         df = get_data(symbol, tf)
     
     if not df.empty:
@@ -180,7 +176,6 @@ if st.button("START ANALYSIS 🚀"):
                     <div class="sig-row"><span class="sig-label">TP 4</span><span class="sig-val sig-long">${tps[3]:.5f} <span class="sig-roi">(+{tp_rois[3]:.0f}%)</span></span></div>
                     <hr style="border-color:#444">
                     <div class="sig-row"><span class="sig-label">STOP LOSS</span><span class="sig-val sig-short">${sl:.5f} <span class="sig-roi">({sl_roi:.0f}%)</span></span></div>
-                    <div class="sig-row"><span class="sig-label">R:R RATIO</span><span class="sig-val">1 : 4.5</span></div>
                 </div>
                 """, unsafe_allow_html=True)
             else:
@@ -189,16 +184,12 @@ if st.button("START ANALYSIS 🚀"):
         with c2:
             fig = go.Figure(data=[go.Candlestick(x=df['timestamp'], open=df['open'], high=df['high'], low=df['low'], close=df['close'])])
             fig.update_layout(template="plotly_dark", height=600, title=f"{display_sym} CHART", xaxis_rangeslider_visible=False)
-            
             if sig != "NEUTRAL":
-                fig.add_hline(y=price, line_color="white", annotation_text="ENTRY")
-                fig.add_hline(y=tps[0], line_color="#0ECB81", line_dash="dot", annotation_text="TP 1")
-                fig.add_hline(y=tps[3], line_color="#0ECB81", annotation_text="TP 4")
-                fig.add_hline(y=sl, line_color="#F6465D", annotation_text="SL")
-                
+                fig.add_hline(y=price, line_color="white")
+                fig.add_hline(y=tps[0], line_color="#0ECB81", line_dash="dot")
+                fig.add_hline(y=sl, line_color="#F6465D")
             st.plotly_chart(fig, use_container_width=True)
-            
     else:
-        st.error(f"Data blocked for {symbol}. Server might be restricted.")
+        st.error(f"Could not load data for {symbol}. Try another coin or reload.")
 else:
     st.info("Select Coin -> Click START ANALYSIS")
