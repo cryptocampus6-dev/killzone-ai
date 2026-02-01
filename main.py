@@ -65,7 +65,6 @@ def get_hot_coins():
     try:
         tickers = exchange.fetch_tickers()
         usdt_tickers = {k: v for k, v in tickers.items() if '/USDT' in k}
-        # Fixed Sorting Line
         sorted_t = sorted(usdt_tickers.items(), key=lambda x: float(x[1].get('percentage', 0) or 0), reverse=True)
         return sorted_t[:10]
     except: return []
