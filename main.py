@@ -169,4 +169,26 @@ if st.button("START ANALYSIS 🚀"):
                     <div style="color:#FCD535; font-size:20px; border-bottom:1px solid #444; margin-bottom:10px;">OFFICIAL SIGNAL 📡</div>
                     <div style="display:flex; justify-content:space-between; margin-bottom:5px;"><span>TYPE</span><span class="{color}" style="font-size:22px; font-weight:bold">{sig}</span></div>
                     <div style="display:flex; justify-content:space-between; margin-bottom:5px;"><span>SCORE</span><span>{score}%</span></div>
-                    <div style="display:flex; justify-content:space
+                    <div style="display:flex; justify-content:space-between; margin-bottom:5px;"><span>LEV</span><span style="background:#333; color:#FCD535; padding:2px 5px; border-radius:3px;">Isolated {lev}x</span></div>
+                    <div style="display:flex; justify-content:space-between; margin-bottom:5px;"><span>ENTRY</span><span class="sig-val">${price:.5f}</span></div>
+                    <div style="font-size:12px; color:#aaa; margin:10px 0;">{reasons_txt}</div>
+                    <hr style="border-color:#444">
+                    <div style="display:flex; justify-content:space-between;"><span>TP 1</span><span class="sig-long">${tps[0]:.5f} <span style="font-size:11px">({tp_rois[0]:.0f}%)</span></span></div>
+                    <div style="display:flex; justify-content:space-between;"><span>TP 2</span><span class="sig-long">${tps[1]:.5f} <span style="font-size:11px">({tp_rois[1]:.0f}%)</span></span></div>
+                    <div style="display:flex; justify-content:space-between;"><span>TP 3</span><span class="sig-long">${tps[2]:.5f} <span style="font-size:11px">({tp_rois[2]:.0f}%)</span></span></div>
+                    <hr style="border-color:#444">
+                    <div style="display:flex; justify-content:space-between;"><span>STOP</span><span class="sig-short">${sl:.5f} <span style="font-size:11px">({sl_roi:.0f}%)</span></span></div>
+                </div>
+                """, unsafe_allow_html=True)
+            else: st.warning("Neutral Market - No Trade")
+            
+        with col2:
+            fig = go.Figure(data=[go.Candlestick(x=df['timestamp'], open=df['open'], high=df['high'], low=df['low'], close=df['close'])])
+            fig.update_layout(template="plotly_dark", height=600, title=f"{symbol.split(':')[0]} CHART", xaxis_rangeslider_visible=False)
+            fig.add_trace(go.Scatter(x=df['timestamp'], y=df['sma50'], line=dict(color='yellow', width=1), name='Trend'))
+            if sig != "NEUTRAL":
+                fig.add_hline(y=price, line_color="white", line_dash="dash")
+                fig.add_hline(y=tps[0], line_color="#0ECB81", line_dash="dot")
+                fig.add_hline(y=sl, line_color="#F6465D")
+            st.plotly_chart(fig, use_container_width=True)
+    else: st.error("Data Error. Try another coin.")
