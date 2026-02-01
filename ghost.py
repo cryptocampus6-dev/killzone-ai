@@ -10,11 +10,12 @@ from datetime import datetime, timedelta
 # --- 1. USER SETTINGS ---
 TELEGRAM_BOT_TOKEN = "8524773131:AAFuDVevQzNUwYeehLjQ3M-qK8QsmoaYK8c"
 CHANNEL_ID = "-1003731551541"
-STICKER_ID = "CAACAgIAAxkBAAEgGqpk7pKz"
+# ඔයා එවපු අලුත් ස්ටිකර් ID එක මෙතනට දැම්මා
+STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWIMq--iOTVBE4BA"
 
-# --- 2. COMPLETE BINANCE FUTURES COIN LIST (260+ COINS) ---
+# --- 2. COMPLETE BINANCE FUTURES COIN LIST ---
 DEFAULT_COINS = [
-    "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "SHIB", "AVAX", "DOT", "MATIC", "LTC", "TRX", "LINK", "UNI", "ATOM", "NEAR", "ALGO", "BCH", "FIL", "XLM", "VET", "ICP", "SAND", "MANA", "AXS", "THETA", "AAVE", "EOS", "XTZ", "KLAY", "RUNE", "EGLD", "FTM", "CRV", "FLOW", "KAVA", "GALA", "HBAR", "MINA", "CHZ", "DYDX", "AR", "QNT", "STX", "CVX", "ENJ", "BAT", "COMP", "HOT", "1INCH", "IOTA", "GRT", "RVN", "ZIL", "ETC", "DASH", "WAVES", "OMG", "ICX", "QTUM", "ZRX", "IOST", "ONT", "ZEC", "NEO", "SXP", "SNX", "MKR", "YFI", "SUSHI", "UMA", "YFII", "KSM", "REN", "OCEAN", "RSR", "LRC", "BAL", "KNC", "BNT", "BAND", "OGN", "CTSI", "STORJ", "SKL", "ALICE", "ALPHA", "ANKR", "ARPA", "ATA", "AUDIO", "BAKE", "BEL", "BLZ", "C98", "CELO", "CELR", "CHR", "CKB", "COTI", "CTK", "DENT", "DGB", "DODO", "FLM", "GTC", "HIVE", "HNT", "IDEX", "IOTX", "LINA", "LIT", "LPT", "MASK", "MTL", "NKN", "ONE", "ONG", "PEOPLE", "PERP", "RARE", "RAY", "REEF", "RLC", "ROSE", "SFP", "SLP", "SOL", "STMX", "SUN", "TFUEL", "TLM", "UNFI", "WAXP", "WIN", "XEM", "XMR", "XVS", "YGG", "ZEN", "PEPE", "FLOKI", "WIF", "BONK", "SUI", "SEI", "TIA", "ORDI", "PYTH", "JUP", "1000SHIB", "1000LUNC", "LUNA", "USTC", "OP", "ARB", "APT", "IMX", "LDO", "HOOK", "HFT", "MAGIC", "GNS", "LQTY", "ID", "JOE", "RDNT", "EDU", "SUI", "MAV", "PENDLE", "ARKM", "WLD", "CYBER", "STRK", "AXL", "PORTAL", "AEVO", "METIS", "ETHFI", "ENA", "W", "SAGA", "TAO", "OMNI", "REZ", "BB", "NOT", "IO", "ZK", "ZRO", "LISTA", "RENDER", "BANANA", "RARE", "SYS", "POPCAT", "SUN", "ALPACA", "VIDT", "MBOX", "FLOKI", "CATI", "HMSTR", "EIGEN", "NEIRO", "TURBO", "BABYDOGE", "MOODENG", "GOAT", "GRASS", "DRIFT", "SWELL", "COW", "CETUS", "PNUT", "ACT", "THE"
+    "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "SHIB", "AVAX", "DOT", "MATIC", "LTC", "TRX", "LINK", "UNI", "ATOM", "NEAR", "ALGO", "BCH", "FIL", "XLM", "VET", "ICP", "SAND", "MANA", "AXS", "THETA", "AAVE", "EOS", "XTZ", "KLAY", "RUNE", "EGLD", "FTM", "CRV", "FLOW", "KAVA", "GALA", "HBAR", "MINA", "CHZ", "DYDX", "AR", "QNT", "STX", "CVX", "ENJ", "BAT", "COMP", "HOT", "1INCH", "IOTA", "GRT", "RVN", "ZIL", "ETC", "DASH", "WAVES", "OMG", "ICX", "QTUM", "ZRX", "IOST", "ONT", "ZEC", "NEO", "SXP", "SNX", "MKR", "YFI", "SUSHI", "UMA", "YFII", "KSM", "REN", "OCEAN", "RSR", "LRC", "BAL", "KNC", "BNT", "BAND", "OGN", "CTSI", "STORJ", "SKL", "ALICE", "ALPHA", "ANKR", "ARPA", "ATA", "AUDIO", "BAKE", "BEL", "BLZ", "C98", "CELO", "CELR", "CHR", "CKB", "COTI", "CTK", "DENT", "DGB", "DODO", "FLM", "GTC", "HIVE", "HNT", "IDEX", "IOTX", "KAVA", "LINA", "LIT", "LPT", "MASK", "MTL", "NKN", "ONE", "ONG", "PEOPLE", "PERP", "RARE", "RAY", "REEF", "RLC", "ROSE", "SFP", "SLP", "SOL", "STMX", "SUN", "TFUEL", "TLM", "UNFI", "WAXP", "WIN", "XEM", "XMR", "XVS", "YGG", "ZEN", "PEPE", "FLOKI", "WIF", "BONK", "SUI", "SEI", "TIA", "ORDI", "PYTH", "JUP", "1000SHIB", "1000LUNC", "LUNA", "USTC", "OP", "ARB", "APT", "IMX", "LDO", "HOOK", "HFT", "MAGIC", "GNS", "LQTY", "ID", "JOE", "RDNT", "EDU", "SUI", "MAV", "PENDLE", "ARKM", "WLD", "CYBER", "STRK", "AXL", "PORTAL", "AEVO", "METIS", "ETHFI", "ENA", "W", "SAGA", "TAO", "OMNI", "REZ", "BB", "NOT", "IO", "ZK", "ZRO", "LISTA", "RENDER", "BANANA", "RARE", "SYS", "POPCAT", "SUN", "ALPACA", "VIDT", "MBOX", "FLOKI", "CATI", "HMSTR", "EIGEN", "NEIRO", "TURBO", "BABYDOGE", "MOODENG", "GOAT", "GRASS", "DRIFT", "SWELL", "COW", "CETUS", "PNUT", "ACT", "THE"
 ]
 
 # --- 3. SETUP ---
@@ -112,7 +113,7 @@ def main():
 
                 time_diff = (now_live - last_scan_time).total_seconds()
                 
-                if time_diff >= 900: # 15 Minutes Cycle
+                if time_diff >= 900: # 15 Mins
                     log_box.markdown(f"**🔄 Scanning Market... ({len(coins)} Coins)**")
                     progress_bar = st.progress(0)
                     
