@@ -184,14 +184,14 @@ if st.sidebar.button("📡 Test Telegram"):
     send_telegram("", is_sticker=True)
     time.sleep(2)
     # මෙතන Variables පාවිච්චි කරන්න බෑ, ඒ නිසා Hardcode කළා
-    test_msg = (f"👻 <b>💎CRYPTO CAMPUS VIP SIGNAL💎</b>\n\n"
+    test_msg = (f"👻 <b>GHOST ULTIMATE SIGNAL</b>\n\n"
                 f"🪙 <b>TEST/USDT</b>\n"
                 f"📈 <b>LONG</b> 🟢\n"
                 f"🛠 <b>Methods:</b> SMC, ICT, MSNR, RSI, SMA\n\n"
                 f"🚪 <b>Entry:</b> 100.00\n\n"
                 f"💰 <b>TP 1:</b> 101.00 (50.0%)\n"
                 f"💰 <b>TP 4:</b> 104.00 (200.0%)\n\n"
-                f"⭕ <b>SL:</b> 99.00 (-50.0%)\n"
+                f"⛔ <b>SL:</b> 99.00 (-50.0%)\n"
                 f"⚙️ <b>{LEVERAGE_TEXT}</b>")
     send_telegram(test_msg)
     st.sidebar.success("Test Sent!")
@@ -245,4 +245,30 @@ with tab1:
                                        f"📈 <b>{sig}</b> {emoji}\n"
                                        f"🛠 <b>Methods:</b> {methods_str}\n\n"
                                        f"🚪 <b>Entry:</b> {price:.5f}\n\n"
-                                       f"💰 <b>TP 1:</b> {tps[0]:.5f} ({
+                                       f"💰 <b>TP 1:</b> {tps[0]:.5f} ({roi_1}%)\n"
+                                       f"💰 <b>TP 4:</b> {tps[3]:.5f} ({roi_4}%)\n\n"
+                                       f"⛔ <b>SL:</b> {sl:.5f} (-{sl_roi}%)\n"
+                                       f"⚙️ <b>{LEVERAGE_TEXT}</b>")
+                                
+                                send_telegram(msg)
+                                st.session_state.history.insert(0, {"Time": current_time.strftime("%H:%M"), "Coin": coin, "Signal": sig, "Methods": methods_str})
+                    except: pass
+                    progress_bar.progress((i + 1) / len(coins_list))
+                
+                st.success("Scan Complete!")
+                time.sleep(60); st.rerun()
+            else:
+                time.sleep(1)
+                if current_time.second % 15 == 0: st.rerun()
+        else:
+            st.warning(f"💤 SLEEPING MODE (Resumes at {START_HOUR}:00)")
+            time.sleep(10); st.rerun()
+    else:
+        st.error("⚠️ Engine is STOPPED manually.")
+        time.sleep(2)
+
+with tab2:
+    if st.session_state.history:
+        st.table(pd.DataFrame(st.session_state.history))
+    else:
+        st.info("No signals yet.")
