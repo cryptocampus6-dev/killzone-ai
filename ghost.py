@@ -27,12 +27,12 @@ STATUS_FILE = "bot_status.txt"
 st.set_page_config(page_title="Ghost Protocol Dashboard", page_icon="👻", layout="wide")
 lz = pytz.timezone('Asia/Colombo')
 
-# --- MEMORY FUNCTIONS (මතකය සේව් කරන කොටස) ---
+# --- MEMORY FUNCTIONS ---
 def load_status():
     if os.path.exists(STATUS_FILE):
         with open(STATUS_FILE, "r") as f:
             return f.read().strip() == "TRUE"
-    return True # ෆයිල් එක නැත්නම් මුලින්ම Auto Start වෙනවා
+    return True 
 
 def save_status(is_active):
     with open(STATUS_FILE, "w") as f:
@@ -75,7 +75,7 @@ def analyze(df):
     sig = "LONG" if score >= SCORE_THRESHOLD else "SHORT" if score <= (100 - SCORE_THRESHOLD) else "NEUTRAL"
     return sig, score, curr['close'], curr['atr']
 
-# --- SESSION STATE & MEMORY LOAD ---
+# --- SESSION STATE ---
 if 'coins' not in st.session_state:
     st.session_state.coins = [
         "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "SHIB", "DOT",
@@ -89,11 +89,10 @@ if 'coins' not in st.session_state:
 if 'history' not in st.session_state:
     st.session_state.history = []
 
-# මෙතනින් තමයි ෆයිල් එක කියවලා ස්ටේටස් එක ගන්නේ
 if 'bot_active' not in st.session_state:
     st.session_state.bot_active = load_status()
 
-# --- SIDEBAR CONTROLS ---
+# --- SIDEBAR ---
 st.sidebar.title("🎛️ Control Panel")
 
 status_color = "green" if st.session_state.bot_active else "red"
@@ -102,12 +101,12 @@ st.sidebar.markdown(f"### Status: **:{status_color}[{status_text}]**")
 
 col1, col2 = st.sidebar.columns(2)
 if col1.button("▶️ START ENGINE"):
-    save_status(True) # ෆයිල් එකේ ලියනවා ON කියලා
+    save_status(True)
     st.session_state.bot_active = True
     st.rerun()
     
 if col2.button("⏹️ STOP ENGINE"):
-    save_status(False) # ෆයිල් එකේ ලියනවා OFF කියලා
+    save_status(False)
     st.session_state.bot_active = False
     st.rerun()
 
@@ -131,20 +130,18 @@ if st.sidebar.button("📡 Test Telegram"):
     send_telegram(f"🔔 <b>Status Check:</b> Bot is {'RUNNING 🟢' if st.session_state.bot_active else 'STOPPED 🔴'}")
     st.sidebar.success("Test Sent!")
 
-# --- UI ---
+# --- MAIN UI ---
 st.title("👻 GHOST PROTOCOL : MEMORY MODE")
 
 now_live = datetime.now(lz).strftime("%H:%M:%S")
 st.metric("🇱🇰 Sri Lanka Time", now_live)
 
-# Main Logic Loop
 if st.session_state.bot_active:
     st.success("✅ SYSTEM ACTIVE - Running 24/7 with Memory Protection")
     
     coins_list = st.session_state.coins
     current_time = datetime.now(lz)
 
-    # හැම විනාඩි 15කට වරක් ස්කෑන් කිරීම
     if current_time.minute % 15 == 0 and current_time.second < 50:
         st.markdown(f"### 🔄 Scanning Market... ({now_live})")
         progress_bar = st.progress(0)
@@ -156,11 +153,9 @@ if st.session_state.bot_active:
                     sig, score, price, atr = analyze(df)
                     
                     if sig != "NEUTRAL":
-                        # Sticker
                         send_telegram("", is_sticker=True)
                         time.sleep(15) 
                         
-                        # Targets
                         sl_dist = atr * 1.5
                         tp_dist = sl_dist
                         
@@ -175,7 +170,6 @@ if st.session_state.bot_active:
                         
                         rr = round(abs(tps[3]-price)/abs(price-sl), 2)
                         
-                        # ROI
                         roi_1 = round(abs(tps[0] - price) / price * 100 * LEVERAGE_VAL, 1)
                         roi_2 = round(abs(tps[1] - price) / price * 100 * LEVERAGE_VAL, 1)
                         roi_3 = round(abs(tps[2] - price) / price * 100 * LEVERAGE_VAL, 1)
@@ -205,9 +199,11 @@ if st.session_state.bot_active:
                             "Price": price
                         }
                         st.session_state.history.insert(0, log_entry)
+            except: 
+                pass
             
+            # මෙන්න මේ පේළිය තමයි හදපු තැන (Indentation fixed)
             progress_bar.progress((i + 1) / len(coins_list))
-            except: pass
         
         st.success("Scan Complete!")
         time.sleep(60)
@@ -219,7 +215,6 @@ if st.session_state.bot_active:
             st.rerun()
 
 else:
-    # Stop කරලා නම් තියෙන්නේ
     st.warning("⚠️ Engine is STOPPED manually. Refresh won't start it.")
     time.sleep(2) 
 
