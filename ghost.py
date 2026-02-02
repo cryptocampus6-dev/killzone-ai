@@ -6,6 +6,7 @@ import time
 import requests
 import pytz
 import os
+import json
 from datetime import datetime
 
 # --- USER SETTINGS ---
@@ -23,21 +24,58 @@ SCORE_THRESHOLD = 85
 
 # Leverage Settings
 LEVERAGE_VAL = 50             
-STATUS_FILE = "bot_status.txt"
+DATA_FILE = "bot_data.json" # සියලු දත්ත ගබඩා කරන ෆයිල් එක
 
 st.set_page_config(page_title="Ghost Protocol Dashboard", page_icon="👻", layout="wide")
 lz = pytz.timezone('Asia/Colombo')
 
-# --- MEMORY FUNCTIONS ---
-def load_status():
-    if os.path.exists(STATUS_FILE):
-        with open(STATUS_FILE, "r") as f:
-            return f.read().strip() == "TRUE"
-    return True 
+# --- ADVANCED MEMORY SYSTEM (JSON) ---
+def load_data():
+    default_data = {
+        "bot_active": True,
+        "daily_count": 0,
+        "last_reset_date": datetime.now(lz).strftime("%Y-%m-%d"),
+        "signaled_coins": [],
+        "history": [],
+        "last_scan_block_id": -1
+    }
+    
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r") as f:
+                data = json.load(f)
+                # Check if new day, if so reset daily counters but keep history/status
+                today_str = datetime.now(lz).strftime("%Y-%m-%d")
+                if data.get("last_reset_date") != today_str:
+                    data["daily_count"] = 0
+                    data["signaled_coins"] = []
+                    data["last_reset_date"] = today_str
+                return data
+        except:
+            return default_data
+    return default_data
 
-def save_status(is_active):
-    with open(STATUS_FILE, "w") as f:
-        f.write("TRUE" if is_active else "FALSE")
+def save_data(key, value):
+    # Load current data first
+    current_data = load_data()
+    # Update the specific key
+    current_data[key] = value
+    # Save back to file
+    with open(DATA_FILE, "w") as f:
+        json.dump(current_data, f)
+
+def save_full_state():
+    # Save everything currently in session state to file
+    data_to_save = {
+        "bot_active": st.session_state.bot_active,
+        "daily_count": st.session_state.daily_count,
+        "last_reset_date": st.session_state.last_reset_date,
+        "signaled_coins": st.session_state.signaled_coins,
+        "history": st.session_state.history,
+        "last_scan_block_id": st.session_state.last_scan_block_id
+    }
+    with open(DATA_FILE, "w") as f:
+        json.dump(data_to_save, f)
 
 # --- TELEGRAM FUNCTION ---
 def send_telegram(msg, is_sticker=False):
@@ -120,7 +158,16 @@ def analyze_ultimate(df):
     sig = "LONG" if score >= SCORE_THRESHOLD else "SHORT" if score <= (100 - SCORE_THRESHOLD) else "NEUTRAL"
     return sig, score, curr['close'], curr['atr'], methods_hit
 
-# --- SESSION STATE MANAGEMENT ---
+# --- INITIALIZE SESSION STATE FROM FILE ---
+# This runs once when script starts/refreshes
+saved_data = load_data()
+
+if 'bot_active' not in st.session_state: st.session_state.bot_active = saved_data['bot_active']
+if 'daily_count' not in st.session_state: st.session_state.daily_count = saved_data['daily_count']
+if 'last_reset_date' not in st.session_state: st.session_state.last_reset_date = saved_data['last_reset_date']
+if 'signaled_coins' not in st.session_state: st.session_state.signaled_coins = saved_data['signaled_coins']
+if 'history' not in st.session_state: st.session_state.history = saved_data['history']
+if 'last_scan_block_id' not in st.session_state: st.session_state.last_scan_block_id = saved_data['last_scan_block_id']
 if 'coins' not in st.session_state:
     st.session_state.coins = [
         "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "AVAX", "DOT", "LINK", "TRX",
@@ -135,24 +182,8 @@ if 'coins' not in st.session_state:
         "NEO", "QTUM", "IOTA", "KAVA", "MINA", "QNT", "HBAR", "VET", "ZEC",
         "DASH", "XMR", "ROSE", "HOT", "RVN", "BAT", "ENJ", "ZIL", "IOST"
     ]
-
-if 'history' not in st.session_state: st.session_state.history = []
-if 'bot_active' not in st.session_state: st.session_state.bot_active = load_status()
 if 'force_scan' not in st.session_state: st.session_state.force_scan = False
 
-# --- MEMORY FOR DAILY COINS ---
-# This list remembers which coins we signaled today
-if 'signaled_coins' not in st.session_state: st.session_state.signaled_coins = []
-
-# Daily Limit & Coin Reset Logic
-today_str = datetime.now(lz).strftime("%Y-%m-%d")
-if 'last_reset_date' not in st.session_state or st.session_state.last_reset_date != today_str:
-    st.session_state.last_reset_date = today_str
-    st.session_state.daily_count = 0
-    st.session_state.signaled_coins = [] # Clear the list for new day
-
-# Scan Block Tracking
-if 'last_scan_block_id' not in st.session_state: st.session_state.last_scan_block_id = -1
 
 # --- SIDEBAR ---
 st.sidebar.title("🎛️ Control Panel")
@@ -180,15 +211,19 @@ st.sidebar.markdown(f"### Status: **:{status_color}[{status_text}]**")
 st.sidebar.caption(f"Time: {START_HOUR}:00 - {END_HOUR}:00")
 st.sidebar.metric("Daily Signals", f"{st.session_state.daily_count} / {MAX_DAILY_SIGNALS}")
 
-# Show Signaled Coins List (Optional - for you to see)
+# Show Signaled Coins List
 if st.session_state.signaled_coins:
     st.sidebar.caption(f"Today's Signals: {', '.join(st.session_state.signaled_coins)}")
 
 col1, col2 = st.sidebar.columns(2)
 if col1.button("▶️ START"):
-    save_status(True); st.session_state.bot_active = True; st.rerun()
+    st.session_state.bot_active = True
+    save_full_state() # Save immediately
+    st.rerun()
 if col2.button("⏹️ STOP"):
-    save_status(False); st.session_state.bot_active = False; st.rerun()
+    st.session_state.bot_active = False
+    save_full_state() # Save immediately
+    st.rerun()
 
 st.sidebar.markdown("---")
 
@@ -238,10 +273,10 @@ def run_scan():
     status_area = st.empty()
     
     for i, coin in enumerate(coins_list):
-        # --- NEW: SKIP IF ALREADY SIGNALED TODAY ---
+        # SKIP IF ALREADY SIGNALED TODAY
         if coin in st.session_state.signaled_coins:
             progress_bar.progress((i + 1) / len(coins_list))
-            continue # Skip this coin immediately
+            continue
 
         try:
             df = get_data(f"{coin}/USDT:USDT")
@@ -301,11 +336,14 @@ def run_scan():
                         )
                         
                         send_telegram(msg)
-                        st.session_state.history.insert(0, {"Time": current_time.strftime("%H:%M"), "Coin": coin, "Signal": sig, "Methods": methods_str})
                         
-                        # --- MARK AS SIGNALED ---
+                        # --- UPDATE STATE & SAVE TO FILE ---
+                        st.session_state.history.insert(0, {"Time": current_time.strftime("%H:%M"), "Coin": coin, "Signal": sig, "Methods": methods_str})
                         st.session_state.daily_count += 1
-                        st.session_state.signaled_coins.append(coin) # Add to blacklist for today
+                        st.session_state.signaled_coins.append(coin)
+                        
+                        # Save immediately to ensure persistence
+                        save_full_state()
                         
         except: pass
         progress_bar.progress((i + 1) / len(coins_list))
@@ -326,6 +364,7 @@ with tab1:
 
             if (current_block_id != st.session_state.last_scan_block_id) and is_start_of_block:
                 st.session_state.last_scan_block_id = current_block_id
+                save_full_state() # Save scan time
                 run_scan()
                 st.rerun()
             elif st.session_state.force_scan:
