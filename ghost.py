@@ -123,9 +123,26 @@ def analyze_ultimate(df):
 # --- SESSION STATE ---
 if 'coins' not in st.session_state:
     st.session_state.coins = [
-        "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "SHIB", "DOT",
-        "LINK", "TRX", "MATIC", "BCH", "NEAR", "UNI", "LTC", "APT", "INJ", "OP",
-        "PEPE", "WIF", "BONK", "SUI", "SEI", "TIA", "ORDI", "1000SATS", "JUP"
+        # --- MAJORS ---
+        "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "AVAX", "DOT", "LINK", "TRX",
+        "MATIC", "LTC", "BCH", "UNI", "NEAR", "APT", "ICP", "FIL", "ATOM", "XLM",
+        
+        # --- MEME COINS (High Volatility) ---
+        "DOGE", "SHIB", "PEPE", "WIF", "BONK", "FLOKI", "MEME", "PEOPLE", "BOME",
+        "DOGS", "NOT", "TURBO", "BRETT", "POPCAT", "MYRO", "LADYS", "SATS", "ORDI",
+        
+        # --- AI & BIG DATA ---
+        "RENDER", "FET", "WLD", "ARKM", "GRT", "THETA", "AGIX", "OCEAN", "PHB",
+        
+        # --- LAYER 1 & 2 (Trending) ---
+        "SUI", "SEI", "ARB", "OP", "TIA", "INJ", "KAS", "TON", "FTM", "ALGO",
+        "MANTA", "STRK", "BLUR", "ZRO", "ZK", "PYTH", "JUP", "ENS", "CRV",
+        
+        # --- DEFI & OTHERS ---
+        "AAVE", "MKR", "SNX", "COMP", "1INCH", "RUNE", "DYDX", "GMX", "LDO",
+        "PENDLE", "EGLD", "SAND", "MANA", "AXS", "GALA", "CHZ", "FLOW", "EOS",
+        "NEO", "QTUM", "IOTA", "KAVA", "MINA", "QNT", "HBAR", "VET", "ZEC",
+        "DASH", "XMR", "ROSE", "HOT", "RVN", "BAT", "ENJ", "ZIL", "IOST"
     ]
 
 if 'history' not in st.session_state: st.session_state.history = []
