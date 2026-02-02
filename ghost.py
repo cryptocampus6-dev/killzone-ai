@@ -137,6 +137,7 @@ if 'coins' not in st.session_state:
 
 if 'history' not in st.session_state: st.session_state.history = []
 if 'bot_active' not in st.session_state: st.session_state.bot_active = load_status()
+if 'force_scan' not in st.session_state: st.session_state.force_scan = False
 
 # --- SIDEBAR ---
 st.sidebar.title("🎛️ Control Panel")
@@ -163,6 +164,13 @@ if col2.button("⏹️ STOP"):
 
 st.sidebar.markdown("---")
 
+# --- MANUAL TRIGGER (අලුත් බටන් එක) ---
+if st.sidebar.button("⚡ FORCE SCAN NOW"):
+    st.session_state.force_scan = True
+    st.rerun()
+
+st.sidebar.markdown("---")
+
 st.sidebar.subheader("🪙 Coin Manager")
 new_coin = st.sidebar.text_input("Add Coin (e.g. SUI)", "").upper()
 if st.sidebar.button("➕ Add Coin"):
@@ -177,12 +185,11 @@ if st.sidebar.button("🗑️ Remove Selected"):
 
 st.sidebar.markdown("---")
 
-# --- FIXED TEST BUTTON (UPDATED EMOJIS) ---
+# --- FIXED TEST BUTTON ---
 if st.sidebar.button("📡 Test Telegram"):
     send_telegram("", is_sticker=True)
     time.sleep(2)
     
-    # Example for Long
     test_msg = (
         f"💎<b>CRYPTO CAMPUS VIP</b>💎\n\n"
         f"🌑 <b>BTC USDT</b>\n\n"
@@ -210,77 +217,95 @@ st.metric("🇱🇰 Sri Lanka Time", now_live)
 
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
 
+def run_scan():
+    st.markdown(f"### 🔄 Scanning {len(coins_list)} Coins...")
+    progress_bar = st.progress(0)
+    status_area = st.empty()
+    
+    for i, coin in enumerate(coins_list):
+        try:
+            df = get_data(f"{coin}/USDT:USDT")
+            if not df.empty:
+                sig, score, price, atr, methods = analyze_ultimate(df)
+                
+                # --- VISIBLE DELAY ---
+                current_rsi = df['rsi'].iloc[-1]
+                # මේ ලයින් එක තමා පේන්නේ
+                status_area.markdown(f"👀 **Checking:** `{coin}` | 📊 **Score:** `{score}/100` | 📉 **RSI:** `{current_rsi:.1f}`")
+                time.sleep(0.1) # පොඩි ඩිලේ එකක් දැම්මා ලයින් එක පේන්න
+
+                if sig != "NEUTRAL":
+                    send_telegram("", is_sticker=True)
+                    time.sleep(15)
+                    
+                    sl_dist = atr * 1.5
+                    tp_dist = sl_dist
+                    
+                    if sig == "LONG":
+                        sl = price - sl_dist
+                        tps = [price + tp_dist*x for x in range(1, 5)] 
+                        emoji_circle = "🟢"
+                        direction_txt = "Long"
+                    else:
+                        sl = price + sl_dist
+                        tps = [price - tp_dist*x for x in range(1, 5)]
+                        emoji_circle = "🔴"
+                        direction_txt = "Short"
+                    
+                    rr = round(abs(tps[3]-price)/abs(price-sl), 2)
+                    
+                    roi_1 = round(abs(tps[0] - price) / price * 100 * LEVERAGE_VAL, 1)
+                    roi_2 = round(abs(tps[1] - price) / price * 100 * LEVERAGE_VAL, 1)
+                    roi_3 = round(abs(tps[2] - price) / price * 100 * LEVERAGE_VAL, 1)
+                    roi_4 = round(abs(tps[3] - price) / price * 100 * LEVERAGE_VAL, 1)
+                    sl_roi = round(abs(price - sl) / price * 100 * LEVERAGE_VAL, 1)
+                    
+                    methods_str = ", ".join(methods)
+
+                    msg = (
+                        f"💎<b>CRYPTO CAMPUS VIP</b>💎\n\n"
+                        f"🌑 <b>{coin} USDT</b>\n\n"
+                        f"{emoji_circle}<b>{direction_txt}</b>\n\n"
+                        f"🚀<b>Isolated</b>\n"
+                        f"📈<b>Leverage 50X</b>\n\n"
+                        f"💥<b>Entry {price:.4f}</b>\n\n"
+                        f"✅<b>Take Profit</b>\n\n"
+                        f"1️⃣ {tps[0]:.4f} ({roi_1}%)\n"
+                        f"2️⃣ {tps[1]:.4f} ({roi_2}%)\n"
+                        f"3️⃣ {tps[2]:.4f} ({roi_3}%)\n"
+                        f"4️⃣ {tps[3]:.4f} ({roi_4}%)\n\n"
+                        f"⭕ <b>Stop Loss {sl:.4f} ({sl_roi}%)</b>\n\n"
+                        f"📝 <b>RR 1:{rr}</b>\n\n"
+                        f"⚠️ <b>Margin Use 1%-5%(Trading Plan Use)</b>"
+                    )
+                    
+                    send_telegram(msg)
+                    st.session_state.history.insert(0, {"Time": current_time.strftime("%H:%M"), "Coin": coin, "Signal": sig, "Methods": methods_str})
+        except: pass
+        progress_bar.progress((i + 1) / len(coins_list))
+    
+    status_area.empty()
+    st.success("Scan Complete!")
+    return
+
 with tab1:
     if st.session_state.bot_active:
         if is_within_hours:
-            st.success(f"✅ SYSTEM ACTIVE - Scanning Market (Ends at {END_HOUR}:00)")
-            
+            # 1. AUTO SCAN LOGIC (Every 15 mins)
             if current_time.minute % 15 == 0 and current_time.second < 50:
-                st.markdown(f"### 🔄 Scanning {len(coins_list)} Coins...")
-                progress_bar = st.progress(0)
-                
-                for i, coin in enumerate(coins_list):
-                    try:
-                        df = get_data(f"{coin}/USDT:USDT")
-                        if not df.empty:
-                            sig, score, price, atr, methods = analyze_ultimate(df)
-                            
-                            if sig != "NEUTRAL":
-                                send_telegram("", is_sticker=True)
-                                time.sleep(15)
-                                
-                                sl_dist = atr * 1.5
-                                tp_dist = sl_dist
-                                
-                                # Logic to switch Emojis based on Direction
-                                if sig == "LONG":
-                                    sl = price - sl_dist
-                                    tps = [price + tp_dist*x for x in range(1, 5)] 
-                                    emoji_circle = "🟢"
-                                    direction_txt = "Long"
-                                else:
-                                    sl = price + sl_dist
-                                    tps = [price - tp_dist*x for x in range(1, 5)]
-                                    emoji_circle = "🔴"
-                                    direction_txt = "Short"
-                                
-                                rr = round(abs(tps[3]-price)/abs(price-sl), 2)
-                                
-                                # ROI Calculations
-                                roi_1 = round(abs(tps[0] - price) / price * 100 * LEVERAGE_VAL, 1)
-                                roi_2 = round(abs(tps[1] - price) / price * 100 * LEVERAGE_VAL, 1)
-                                roi_3 = round(abs(tps[2] - price) / price * 100 * LEVERAGE_VAL, 1)
-                                roi_4 = round(abs(tps[3] - price) / price * 100 * LEVERAGE_VAL, 1)
-                                sl_roi = round(abs(price - sl) / price * 100 * LEVERAGE_VAL, 1)
-                                
-                                methods_str = ", ".join(methods)
-
-                                # --- UPDATED MESSAGE FORMAT WITH NEW EMOJIS ---
-                                msg = (
-                                    f"💎<b>CRYPTO CAMPUS VIP</b>💎\n\n"
-                                    f"🌑 <b>{coin} USDT</b>\n\n"
-                                    f"{emoji_circle}<b>{direction_txt}</b>\n\n"
-                                    f"🚀<b>Isolated</b>\n"
-                                    f"📈<b>Leverage 50X</b>\n\n"
-                                    f"💥<b>Entry {price:.4f}</b>\n\n"
-                                    f"✅<b>Take Profit</b>\n\n"
-                                    f"1️⃣ {tps[0]:.4f} ({roi_1}%)\n"
-                                    f"2️⃣ {tps[1]:.4f} ({roi_2}%)\n"
-                                    f"3️⃣ {tps[2]:.4f} ({roi_3}%)\n"
-                                    f"4️⃣ {tps[3]:.4f} ({roi_4}%)\n\n"
-                                    f"⭕ <b>Stop Loss {sl:.4f} ({sl_roi}%)</b>\n\n"
-                                    f"📝 <b>RR 1:{rr}</b>\n\n"
-                                    f"⚠️ <b>Margin Use 1%-5%(Trading Plan Use)</b>"
-                                )
-                                
-                                send_telegram(msg)
-                                st.session_state.history.insert(0, {"Time": current_time.strftime("%H:%M"), "Coin": coin, "Signal": sig, "Methods": methods_str})
-                    except: pass
-                    progress_bar.progress((i + 1) / len(coins_list))
-                
-                st.success("Scan Complete!")
+                run_scan()
                 time.sleep(60); st.rerun()
+            
+            # 2. MANUAL FORCE SCAN LOGIC
+            elif st.session_state.force_scan:
+                run_scan()
+                st.session_state.force_scan = False # Reset flag
+                st.rerun()
+                
             else:
+                next_scan_min = 15 - (current_time.minute % 15)
+                st.info(f"⏳ **Waiting for next scheduled scan...** (Approx. in {next_scan_min} mins)")
+                st.caption("Tip: Use 'FORCE SCAN NOW' in sidebar to test instantly.")
                 time.sleep(1)
                 if current_time.second % 15 == 0: st.rerun()
         else:
