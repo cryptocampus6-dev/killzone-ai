@@ -17,14 +17,14 @@ STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWlMq--i
 # --- TIME SETTINGS ---
 START_HOUR = 7   # උදේ 7
 END_HOUR = 21    # රෑ 9
-MAX_DAILY_SIGNALS = 8 # දවසට මුළු සිග්නල් ගණන
+MAX_DAILY_SIGNALS = 8 
 
 # --- 10 METHODS CONFIG ---
 SCORE_THRESHOLD = 85 
 
 # Leverage Settings
 LEVERAGE_VAL = 50             
-DATA_FILE = "bot_data.json" # සියලු දත්ත ගබඩා කරන ෆයිල් එක
+DATA_FILE = "bot_data.json" 
 
 st.set_page_config(page_title="Ghost Protocol Dashboard", page_icon="👻", layout="wide")
 lz = pytz.timezone('Asia/Colombo')
@@ -44,7 +44,6 @@ def load_data():
         try:
             with open(DATA_FILE, "r") as f:
                 data = json.load(f)
-                # Check if new day, if so reset daily counters but keep history/status
                 today_str = datetime.now(lz).strftime("%Y-%m-%d")
                 if data.get("last_reset_date") != today_str:
                     data["daily_count"] = 0
@@ -56,16 +55,12 @@ def load_data():
     return default_data
 
 def save_data(key, value):
-    # Load current data first
     current_data = load_data()
-    # Update the specific key
     current_data[key] = value
-    # Save back to file
     with open(DATA_FILE, "w") as f:
         json.dump(current_data, f)
 
 def save_full_state():
-    # Save everything currently in session state to file
     data_to_save = {
         "bot_active": st.session_state.bot_active,
         "daily_count": st.session_state.daily_count,
@@ -158,8 +153,7 @@ def analyze_ultimate(df):
     sig = "LONG" if score >= SCORE_THRESHOLD else "SHORT" if score <= (100 - SCORE_THRESHOLD) else "NEUTRAL"
     return sig, score, curr['close'], curr['atr'], methods_hit
 
-# --- INITIALIZE SESSION STATE FROM FILE ---
-# This runs once when script starts/refreshes
+# --- INITIALIZE SESSION STATE ---
 saved_data = load_data()
 
 if 'bot_active' not in st.session_state: st.session_state.bot_active = saved_data['bot_active']
@@ -184,61 +178,44 @@ if 'coins' not in st.session_state:
     ]
 if 'force_scan' not in st.session_state: st.session_state.force_scan = False
 
-
 # --- SIDEBAR ---
 st.sidebar.title("🎛️ Control Panel")
-
 coins_list = st.session_state.coins
 current_time = datetime.now(lz)
 is_within_hours = START_HOUR <= current_time.hour < END_HOUR
 
-# Status Logic
-status_color = "red"
-status_text = "STOPPED 🔴"
-
+status_color = "red"; status_text = "STOPPED 🔴"
 if st.session_state.bot_active:
     if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
-        status_color = "orange"
-        status_text = "DAILY LIMIT REACHED 🛑"
+        status_color = "orange"; status_text = "DAILY LIMIT REACHED 🛑"
     elif is_within_hours:
-        status_color = "green"
-        status_text = "RUNNING 🟢"
+        status_color = "green"; status_text = "RUNNING 🟢"
     else:
-        status_color = "orange"
-        status_text = "SLEEPING 💤"
+        status_color = "orange"; status_text = "SLEEPING 💤"
 
 st.sidebar.markdown(f"### Status: **:{status_color}[{status_text}]**")
 st.sidebar.caption(f"Time: {START_HOUR}:00 - {END_HOUR}:00")
 st.sidebar.metric("Daily Signals", f"{st.session_state.daily_count} / {MAX_DAILY_SIGNALS}")
 
-# Show Signaled Coins List
 if st.session_state.signaled_coins:
     st.sidebar.caption(f"Today's Signals: {', '.join(st.session_state.signaled_coins)}")
 
 col1, col2 = st.sidebar.columns(2)
 if col1.button("▶️ START"):
-    st.session_state.bot_active = True
-    save_full_state() # Save immediately
-    st.rerun()
+    st.session_state.bot_active = True; save_full_state(); st.rerun()
 if col2.button("⏹️ STOP"):
-    st.session_state.bot_active = False
-    save_full_state() # Save immediately
-    st.rerun()
+    st.session_state.bot_active = False; save_full_state(); st.rerun()
 
 st.sidebar.markdown("---")
-
 if st.sidebar.button("⚡ FORCE SCAN NOW"):
-    st.session_state.force_scan = True
-    st.rerun()
-
+    st.session_state.force_scan = True; st.rerun()
 st.sidebar.markdown("---")
 
 st.sidebar.subheader("🪙 Coin Manager")
 new_coin = st.sidebar.text_input("Add Coin (e.g. SUI)", "").upper()
 if st.sidebar.button("➕ Add Coin"):
     if new_coin and new_coin not in st.session_state.coins:
-        st.session_state.coins.append(new_coin)
-        st.success(f"{new_coin} Added!")
+        st.session_state.coins.append(new_coin); st.success(f"{new_coin} Added!")
 
 remove_coin = st.sidebar.selectbox("Remove Coin", st.session_state.coins)
 if st.sidebar.button("🗑️ Remove Selected"):
@@ -246,77 +223,61 @@ if st.sidebar.button("🗑️ Remove Selected"):
         st.session_state.coins.remove(remove_coin); st.rerun()
 
 st.sidebar.markdown("---")
-
-# --- FIXED TEST BUTTON ---
 if st.sidebar.button("📡 Test Telegram"):
-    send_telegram("", is_sticker=True)
-    time.sleep(2)
-    test_msg = "💎<b>CRYPTO CAMPUS VIP</b>💎\n\n🌑 <b>BTC USDT</b>\n\n🟢<b>Long</b>\n\n🚀<b>Isolated</b>\n📈<b>Leverage 50X</b>\n\n💥<b>Entry 82000.90</b>\n\n✅<b>Take Profit</b>\n\n1️⃣ 83000.86 (30.0%)\n2️⃣ 84000.67 (60.0%)\n3️⃣ 85000.63 (90.0%)\n4️⃣ 86000.63 (169.0%)\n\n⭕ <b>Stop Loss 81000.674(60.0%)</b>\n\n📝 <b>RR 1:2.8</b>\n\n⚠️ <b>Margin Use 1%-5%(Trading Plan Use)</b>"
-    send_telegram(test_msg)
-    st.sidebar.success("Test Sent!")
+    send_telegram("", is_sticker=True); time.sleep(2)
+    test_msg = "💎<b>CRYPTO CAMPUS VIP</b>💎\n\n🌑 <b>ZIL USDT</b>\n\n🟢<b>Long</b>\n\n🚀<b>Isolated</b>\n📈<b>Leverage 50X</b>\n\n💥<b>Entry 0.00425678</b>\n\n✅<b>Take Profit</b>\n\n1️⃣ 0.00431000 (50.0%)\n2️⃣ 0.00435000 (100.0%)\n\n⭕ <b>Stop Loss 0.00419000 (50.0%)</b>\n\n📝 <b>RR 1:2.8</b>\n\n⚠️ <b>Margin Use 1%-5%(Trading Plan Use)</b>"
+    send_telegram(test_msg); st.sidebar.success("Test Sent!")
 
-# --- MAIN DASHBOARD ---
 st.title("👻 GHOST PROTOCOL : ULTIMATE EDITION")
 st.write("Methods Active: **RSI, SMA, ATR, SMC, ICT, Elliott Wave, Fibonacci, MSNR, CRT, News**")
-now_live = current_time.strftime("%H:%M:%S")
-st.metric("🇱🇰 Sri Lanka Time", now_live)
+st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
 
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
 
 def run_scan():
     if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
-        st.warning("⚠️ Daily Signal Limit Reached. Skipping Scan.")
-        return
+        st.warning("⚠️ Daily Signal Limit Reached."); return
 
     st.markdown(f"### 🔄 Scanning {len(coins_list)} Coins...")
-    progress_bar = st.progress(0)
-    status_area = st.empty()
+    progress_bar = st.progress(0); status_area = st.empty()
     
     for i, coin in enumerate(coins_list):
-        # SKIP IF ALREADY SIGNALED TODAY
         if coin in st.session_state.signaled_coins:
-            progress_bar.progress((i + 1) / len(coins_list))
-            continue
+            progress_bar.progress((i + 1) / len(coins_list)); continue
 
         try:
             df = get_data(f"{coin}/USDT:USDT")
             if not df.empty:
                 sig, score, price, atr, methods = analyze_ultimate(df)
-                
-                # --- VISIBLE DELAY ---
-                current_rsi = df['rsi'].iloc[-1]
-                status_area.markdown(f"👀 **Checking:** `{coin}` | 📊 **Score:** `{score}/100` | 📉 **RSI:** `{current_rsi:.1f}`")
+                status_area.markdown(f"👀 **Checking:** `{coin}` | 📊 **Score:** `{score}/100`")
                 time.sleep(0.1)
 
                 if sig != "NEUTRAL":
                     if st.session_state.daily_count < MAX_DAILY_SIGNALS:
-                        send_telegram("", is_sticker=True)
-                        time.sleep(15)
+                        send_telegram("", is_sticker=True); time.sleep(15)
                         
-                        # --- LEVERAGE FIX: 50x Optimized SL ---
                         sl_dist = atr * 0.7 
                         tp_dist = sl_dist * 2.0  
                         
                         if sig == "LONG":
                             sl = price - sl_dist
                             tps = [price + (tp_dist * x * 0.6) for x in range(1, 5)] 
-                            emoji_circle = "🟢"
-                            direction_txt = "Long"
+                            emoji_circle = "🟢"; direction_txt = "Long"
                         else:
                             sl = price + sl_dist
                             tps = [price - (tp_dist * x * 0.6) for x in range(1, 5)]
-                            emoji_circle = "🔴"
-                            direction_txt = "Short"
+                            emoji_circle = "🔴"; direction_txt = "Short"
                         
                         rr = round(abs(tps[3]-price)/abs(price-sl), 2)
-                        
-                        roi_1 = round(abs(tps[0] - price) / price * 100 * LEVERAGE_VAL, 1)
-                        roi_2 = round(abs(tps[1] - price) / price * 100 * LEVERAGE_VAL, 1)
-                        roi_3 = round(abs(tps[2] - price) / price * 100 * LEVERAGE_VAL, 1)
-                        roi_4 = round(abs(tps[3] - price) / price * 100 * LEVERAGE_VAL, 1)
-                        sl_roi = round(abs(price - sl) / price * 100 * LEVERAGE_VAL, 1)
-                        
+                        roi_1 = round(abs(tps[0]-price)/price*100*LEVERAGE_VAL, 1)
+                        roi_2 = round(abs(tps[1]-price)/price*100*LEVERAGE_VAL, 1)
+                        roi_3 = round(abs(tps[2]-price)/price*100*LEVERAGE_VAL, 1)
+                        roi_4 = round(abs(tps[3]-price)/price*100*LEVERAGE_VAL, 1)
+                        sl_roi = round(abs(price-sl)/price*100*LEVERAGE_VAL, 1)
                         methods_str = ", ".join(methods)
+
+                        # --- SMART FORMATTING FOR PRICE ---
+                        p_fmt = ".8f" if price < 1 else ".2f"
 
                         msg = (
                             f"💎<b>CRYPTO CAMPUS VIP</b>💎\n\n"
@@ -324,68 +285,47 @@ def run_scan():
                             f"{emoji_circle}<b>{direction_txt}</b>\n\n"
                             f"🚀<b>Isolated</b>\n"
                             f"📈<b>Leverage 50X</b>\n\n"
-                            f"💥<b>Entry {price:.4f}</b>\n\n"
+                            f"💥<b>Entry {price:{p_fmt}}</b>\n\n"
                             f"✅<b>Take Profit</b>\n\n"
-                            f"1️⃣ {tps[0]:.4f} ({roi_1}%)\n"
-                            f"2️⃣ {tps[1]:.4f} ({roi_2}%)\n"
-                            f"3️⃣ {tps[2]:.4f} ({roi_3}%)\n"
-                            f"4️⃣ {tps[3]:.4f} ({roi_4}%)\n\n"
-                            f"⭕ <b>Stop Loss {sl:.4f} ({sl_roi}%)</b>\n\n"
+                            f"1️⃣ {tps[0]:{p_fmt}} ({roi_1}%)\n"
+                            f"2️⃣ {tps[1]:{p_fmt}} ({roi_2}%)\n"
+                            f"3️⃣ {tps[2]:{p_fmt}} ({roi_3}%)\n"
+                            f"4️⃣ {tps[3]:{p_fmt}} ({roi_4}%)\n\n"
+                            f"⭕ <b>Stop Loss {sl:{p_fmt}} ({sl_roi}%)</b>\n\n"
                             f"📝 <b>RR 1:{rr}</b>\n\n"
                             f"⚠️ <b>Margin Use 1%-5%(Trading Plan Use)</b>"
                         )
                         
                         send_telegram(msg)
-                        
-                        # --- UPDATE STATE & SAVE TO FILE ---
                         st.session_state.history.insert(0, {"Time": current_time.strftime("%H:%M"), "Coin": coin, "Signal": sig, "Methods": methods_str})
                         st.session_state.daily_count += 1
                         st.session_state.signaled_coins.append(coin)
-                        
-                        # Save immediately to ensure persistence
                         save_full_state()
-                        
         except: pass
         progress_bar.progress((i + 1) / len(coins_list))
     
-    status_area.empty()
-    st.success("Scan Complete!")
-    return
+    status_area.empty(); st.success("Scan Complete!"); return
 
 with tab1:
     if st.session_state.bot_active:
         if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
-            st.warning(f"🛑 Daily Limit Reached ({st.session_state.daily_count}/{MAX_DAILY_SIGNALS}). Bot is sleeping until tomorrow.")
-            time.sleep(60); st.rerun()
-
+            st.warning("🛑 Daily Limit Reached. Sleeping..."); time.sleep(60); st.rerun()
         elif is_within_hours:
             current_block_id = current_time.hour * 4 + (current_time.minute // 15)
             is_start_of_block = (current_time.minute % 15) <= 5 
-
             if (current_block_id != st.session_state.last_scan_block_id) and is_start_of_block:
-                st.session_state.last_scan_block_id = current_block_id
-                save_full_state() # Save scan time
-                run_scan()
-                st.rerun()
+                st.session_state.last_scan_block_id = current_block_id; save_full_state(); run_scan(); st.rerun()
             elif st.session_state.force_scan:
-                run_scan()
-                st.session_state.force_scan = False 
-                st.rerun()
+                run_scan(); st.session_state.force_scan = False; st.rerun()
             else:
                 next_min = 15 - (current_time.minute % 15)
-                st.info(f"⏳ **Monitoring Market...** (Next scan window in approx. {next_min} mins)")
-                st.caption(f"Signals Today: {st.session_state.daily_count} / {MAX_DAILY_SIGNALS}")
-                time.sleep(5) 
-                st.rerun()
+                st.info(f"⏳ **Monitoring...** (Next scan in {next_min} mins)")
+                time.sleep(5); st.rerun()
         else:
-            st.warning(f"💤 SLEEPING MODE (Resumes at {START_HOUR}:00)")
-            time.sleep(10); st.rerun()
+            st.warning(f"💤 SLEEPING (Resumes {START_HOUR}:00)"); time.sleep(10); st.rerun()
     else:
-        st.error("⚠️ Engine is STOPPED manually.")
-        time.sleep(2)
+        st.error("⚠️ STOPPED"); time.sleep(2)
 
 with tab2:
-    if st.session_state.history:
-        st.table(pd.DataFrame(st.session_state.history))
-    else:
-        st.info("No signals yet.")
+    if st.session_state.history: st.table(pd.DataFrame(st.session_state.history))
+    else: st.info("No signals yet.")
