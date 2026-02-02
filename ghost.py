@@ -20,9 +20,8 @@ END_HOUR = 21    # රෑ 9
 # --- 10 METHODS CONFIG ---
 SCORE_THRESHOLD = 85 
 
-LEVERAGE_TEXT = "Isolated 50X"  
+# Leverage Settings
 LEVERAGE_VAL = 50             
-MARGIN_TEXT = "1% - 3%"       
 STATUS_FILE = "bot_status.txt"
 
 st.set_page_config(page_title="Ghost Protocol Dashboard", page_icon="👻", layout="wide")
@@ -53,7 +52,6 @@ def send_telegram(msg, is_sticker=False):
 def get_data(symbol):
     try:
         exchange = ccxt.mexc({'options': {'defaultType': 'swap'}})
-        # Top 100 ලිස්ට් එක නිසා ලෙඩේ එන්න පුළුවන්, ඒ නිසා Timeout එක හැදුවා
         exchange.timeout = 10000 
         bars = exchange.fetch_ohlcv(symbol, timeframe='15m', limit=200)
         df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
@@ -179,20 +177,28 @@ if st.sidebar.button("🗑️ Remove Selected"):
 
 st.sidebar.markdown("---")
 
-# --- FIXED TEST BUTTON ---
+# --- FIXED TEST BUTTON (UPDATED EMOJIS) ---
 if st.sidebar.button("📡 Test Telegram"):
     send_telegram("", is_sticker=True)
     time.sleep(2)
-    # මෙතන Variables පාවිච්චි කරන්න බෑ, ඒ නිසා Hardcode කළා
-    test_msg = (f"👻 <b>GHOST ULTIMATE SIGNAL</b>\n\n"
-                f"🪙 <b>TEST/USDT</b>\n"
-                f"📈 <b>LONG</b> 🟢\n"
-                f"🛠 <b>Methods:</b> SMC, ICT, MSNR, RSI, SMA\n\n"
-                f"🚪 <b>Entry:</b> 100.00\n\n"
-                f"💰 <b>TP 1:</b> 101.00 (50.0%)\n"
-                f"💰 <b>TP 4:</b> 104.00 (200.0%)\n\n"
-                f"⛔ <b>SL:</b> 99.00 (-50.0%)\n"
-                f"⚙️ <b>{LEVERAGE_TEXT}</b>")
+    
+    # Example for Long
+    test_msg = (
+        f"💎<b>CRYPTO CAMPUS VIP</b>💎\n\n"
+        f"🌑 <b>BTC USDT</b>\n\n"
+        f"🟢<b>Long</b>\n\n"
+        f"🚀<b>Isolated</b>\n"
+        f"📈<b>Leverage 50X</b>\n\n"
+        f"💥<b>Entry 82000.90</b>\n\n"
+        f"✅<b>Take Profit</b>\n\n"
+        f"1️⃣ 83000.86 (30.0%)\n"
+        f"2️⃣ 84000.67 (60.0%)\n"
+        f"3️⃣ 85000.63 (90.0%)\n"
+        f"4️⃣ 86000.63 (169.0%)\n\n"
+        f"⭕ <b>Stop Loss 81000.674(60.0%)</b>\n\n"
+        f"📝 <b>RR 1:5.6</b>\n\n"
+        f"⚠️ <b>Margin Use 1%-5%(Trading Plan Use)</b>"
+    )
     send_telegram(test_msg)
     st.sidebar.success("Test Sent!")
 
@@ -225,30 +231,47 @@ with tab1:
                                 
                                 sl_dist = atr * 1.5
                                 tp_dist = sl_dist
+                                
+                                # Logic to switch Emojis based on Direction
                                 if sig == "LONG":
                                     sl = price - sl_dist
                                     tps = [price + tp_dist*x for x in range(1, 5)] 
-                                    emoji = "🟢"
+                                    emoji_circle = "🟢"
+                                    direction_txt = "Long"
                                 else:
                                     sl = price + sl_dist
                                     tps = [price - tp_dist*x for x in range(1, 5)]
-                                    emoji = "🔴"
+                                    emoji_circle = "🔴"
+                                    direction_txt = "Short"
                                 
+                                rr = round(abs(tps[3]-price)/abs(price-sl), 2)
+                                
+                                # ROI Calculations
                                 roi_1 = round(abs(tps[0] - price) / price * 100 * LEVERAGE_VAL, 1)
+                                roi_2 = round(abs(tps[1] - price) / price * 100 * LEVERAGE_VAL, 1)
+                                roi_3 = round(abs(tps[2] - price) / price * 100 * LEVERAGE_VAL, 1)
                                 roi_4 = round(abs(tps[3] - price) / price * 100 * LEVERAGE_VAL, 1)
                                 sl_roi = round(abs(price - sl) / price * 100 * LEVERAGE_VAL, 1)
                                 
                                 methods_str = ", ".join(methods)
 
-                                msg = (f"👻 <b>GHOST ULTIMATE SIGNAL</b>\n\n"
-                                       f"🪙 <b>{coin} / USDT</b>\n"
-                                       f"📈 <b>{sig}</b> {emoji}\n"
-                                       f"🛠 <b>Methods:</b> {methods_str}\n\n"
-                                       f"🚪 <b>Entry:</b> {price:.5f}\n\n"
-                                       f"💰 <b>TP 1:</b> {tps[0]:.5f} ({roi_1}%)\n"
-                                       f"💰 <b>TP 4:</b> {tps[3]:.5f} ({roi_4}%)\n\n"
-                                       f"⛔ <b>SL:</b> {sl:.5f} (-{sl_roi}%)\n"
-                                       f"⚙️ <b>{LEVERAGE_TEXT}</b>")
+                                # --- UPDATED MESSAGE FORMAT WITH NEW EMOJIS ---
+                                msg = (
+                                    f"💎<b>CRYPTO CAMPUS VIP</b>💎\n\n"
+                                    f"🌑 <b>{coin} USDT</b>\n\n"
+                                    f"{emoji_circle}<b>{direction_txt}</b>\n\n"
+                                    f"🚀<b>Isolated</b>\n"
+                                    f"📈<b>Leverage 50X</b>\n\n"
+                                    f"💥<b>Entry {price:.4f}</b>\n\n"
+                                    f"✅<b>Take Profit</b>\n\n"
+                                    f"1️⃣ {tps[0]:.4f} ({roi_1}%)\n"
+                                    f"2️⃣ {tps[1]:.4f} ({roi_2}%)\n"
+                                    f"3️⃣ {tps[2]:.4f} ({roi_3}%)\n"
+                                    f"4️⃣ {tps[3]:.4f} ({roi_4}%)\n\n"
+                                    f"⭕ <b>Stop Loss {sl:.4f} ({sl_roi}%)</b>\n\n"
+                                    f"📝 <b>RR 1:{rr}</b>\n\n"
+                                    f"⚠️ <b>Margin Use 1%-5%(Trading Plan Use)</b>"
+                                )
                                 
                                 send_telegram(msg)
                                 st.session_state.history.insert(0, {"Time": current_time.strftime("%H:%M"), "Coin": coin, "Signal": sig, "Methods": methods_str})
