@@ -147,7 +147,8 @@ if 'last_reset_date' not in st.session_state or st.session_state.last_reset_date
     st.session_state.daily_count = 0
 
 # Scan Block Tracking (To fix auto-scan issue)
-if 'last_scan_block' not in st.session_state: st.session_state.last_scan_block = -1
+# We track the "Block ID" (e.g., 12:00 is block 48, 12:15 is block 49)
+if 'last_scan_block_id' not in st.session_state: st.session_state.last_scan_block_id = -1
 
 # --- SIDEBAR ---
 st.sidebar.title("🎛️ Control Panel")
@@ -247,9 +248,9 @@ def run_scan():
                         send_telegram("", is_sticker=True)
                         time.sleep(15)
                         
-                        # --- NEW SL LOGIC (50% - 70% ROI Fix) ---
-                        # ATR Multiplier reduced to 0.7 (was 1.5)
-                        # At 50x Leverage, this keeps SL ROI approx 50-70%
+                        # --- LEVERAGE FIX: 50x Optimized SL ---
+                        # 0.7 ATR reduces the distance.
+                        # At 50x Leverage, this targets 50% - 70% ROI Loss.
                         sl_dist = atr * 0.7 
                         tp_dist = sl_dist * 2.0  # RR 1:2 Minimum
                         
@@ -309,12 +310,16 @@ with tab1:
             time.sleep(60); st.rerun()
 
         elif is_within_hours:
-            current_block = current_time.minute // 15
+            # --- AUTO SCAN LOGIC (FIXED) ---
+            # Calculate unique ID for the current 15-min block (0-95 per day)
+            current_block_id = current_time.hour * 4 + (current_time.minute // 15)
             
-            # --- AUTO SCAN LOGIC (IMPROVED) ---
-            # Checks if minute is 0, 15, 30, 45 AND we haven't scanned this block yet
-            if (current_time.minute % 15 == 0) and (current_block != st.session_state.last_scan_block):
-                st.session_state.last_scan_block = current_block # Mark as scanned
+            # Allow scan if we haven't done THIS block yet, AND we are within the first 5 mins of the block
+            # This '5 mins' gives UptimeRobot enough time to hit the server
+            is_start_of_block = (current_time.minute % 15) <= 5 
+
+            if (current_block_id != st.session_state.last_scan_block_id) and is_start_of_block:
+                st.session_state.last_scan_block_id = current_block_id # Mark as scanned
                 run_scan()
                 st.rerun()
             
@@ -325,10 +330,12 @@ with tab1:
                 st.rerun()
             else:
                 next_min = 15 - (current_time.minute % 15)
-                st.info(f"⏳ **Monitoring Market...** (Next scan in approx. {next_min} mins)")
+                st.info(f"⏳ **Monitoring Market...** (Next scan window in approx. {next_min} mins)")
                 st.caption(f"Signals Today: {st.session_state.daily_count} / {MAX_DAILY_SIGNALS}")
-                time.sleep(10) # Refresh less frequently to save resources
-                if current_time.minute % 15 == 0: st.rerun()
+                
+                # Auto-refresh mechanism to keep checking
+                time.sleep(5) 
+                st.rerun()
         else:
             st.warning(f"💤 SLEEPING MODE (Resumes at {START_HOUR}:00)")
             time.sleep(10); st.rerun()
