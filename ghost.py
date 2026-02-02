@@ -184,19 +184,15 @@ if st.sidebar.button("📡 Test Telegram"):
     send_telegram("", is_sticker=True)
     time.sleep(2)
     # මෙතන Variables පාවිච්චි කරන්න බෑ, ඒ නිසා Hardcode කළා
-    test_msg = (f"💎 <b>PREMIUM VIP SIGNAL</b> 💎\n\n"
-                                    f"🪙 <b>{coin} / USDT</b>\n"
-                                    f"📈 <b>{sig}</b> {emoji}\n"
-                                    f"⚙️ <b>{LEVERAGE_TEXT}</b>\n\n"
-                                    f"🚪 <b>Entry:</b> {price:.5f}\n\n"
-                                    f"💰 <b>Take Profit:</b>\n"
-                                    f"1️⃣ {tps[0]:.5f} ({roi_1}%)\n"
-                                    f"2️⃣ {tps[1]:.5f} ({roi_2}%)\n"
-                                    f"3️⃣ {tps[2]:.5f} ({roi_3}%)\n"
-                                    f"4️⃣ {tps[3]:.5f} ({roi_4}%)\n\n"
-                                    f"⛔ <b>Stop Loss:</b> {sl:.5f} (-{sl_roi}%)\n\n"
-                                    f"⚖️ <b>RR:</b> 1:{rr}\n"
-                                    f"🛡️ <b>Margin Use:</b> {MARGIN_TEXT}")
+    test_msg = (f"👻 <b>GHOST ULTIMATE SIGNAL</b>\n\n"
+                f"🪙 <b>TEST/USDT</b>\n"
+                f"📈 <b>LONG</b> 🟢\n"
+                f"🛠 <b>Methods:</b> SMC, ICT, MSNR, RSI, SMA\n\n"
+                f"🚪 <b>Entry:</b> 100.00\n\n"
+                f"💰 <b>TP 1:</b> 101.00 (50.0%)\n"
+                f"💰 <b>TP 4:</b> 104.00 (200.0%)\n\n"
+                f"⛔ <b>SL:</b> 99.00 (-50.0%)\n"
+                f"⚙️ <b>{LEVERAGE_TEXT}</b>")
     send_telegram(test_msg)
     st.sidebar.success("Test Sent!")
 
