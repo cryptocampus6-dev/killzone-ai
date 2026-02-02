@@ -7,6 +7,7 @@ import time
 import os
 
 # --- 1. CONFIGURATION (BRANDING) ---
+# මෙම කොටස අනිවාර්යයෙන්ම මුලින්ම තිබිය යුතුයි.
 st.set_page_config(
     page_title="KillZone Pro Trading",
     page_icon="logo.png",
@@ -14,28 +15,29 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- 2. UI CLEANUP (HIDDEN BRANDING) ---
-# මේ CSS ටිකෙන් තමයි අර "Manage app" බට්න් එකයි, Header එකයි ඔක්කොම හංගන්නේ.
+# --- 2. UI CLEANUP (AGGRESSIVE MODE) ---
+# මෙම CSS කෝඩ් එකෙන් තමයි "Manage app" සහ අනවශ්‍ය හැමදේම හංගන්නේ.
 st.markdown("""
     <style>
     /* 1. Background Colors */
     .stApp { background-color: #0b0e11; color: #eaecef; }
     [data-testid="stSidebar"] { background-color: #1e2329; }
     
-    /* 2. Hide "Manage App" Button (Bottom Right) - Aggressive Method */
+    /* 2. Hide "Manage App" Button (Bottom Right) */
     .stAppDeployButton { display: none !important; visibility: hidden !important; }
     [data-testid="stAppDeployButton"] { display: none !important; visibility: hidden !important; }
     
-    /* 3. Hide Top Decoration Bar */
+    /* 3. Hide Top Header & Decoration Bar */
     [data-testid="stDecoration"] { display: none !important; }
+    [data-testid="stHeader"] { display: none !important; }
+    header { display: none !important; }
     
-    /* 4. Hide Top Toolbar (Hamburger Menu + "Running" animation) */
-    [data-testid="stToolbar"] { visibility: hidden !important; display: none !important; }
-    header { visibility: hidden !important; display: none !important; }
+    /* 4. Hide Top Toolbar (Hamburger Menu) */
+    [data-testid="stToolbar"] { display: none !important; }
     
     /* 5. Hide Footer */
-    footer { visibility: hidden !important; display: none !important; }
-    #MainMenu { visibility: hidden !important; display: none !important; }
+    footer { display: none !important; }
+    #MainMenu { display: none !important; }
 
     /* --- Custom Component Styles --- */
     .signal-box { background-color: #1e2329; border: 1px solid #2b3139; border-radius: 10px; padding: 20px; }
@@ -47,7 +49,8 @@ st.markdown("""
     .hot-up { color: #0ECB81; }
     .hot-down { color: #F6465D; }
     
-    .title-text { font-size: 35px; font-weight: bold; color: #ffffff; margin-top: -20px; }
+    /* Title Fix to remove gap */
+    .title-text { font-size: 35px; font-weight: bold; color: #ffffff; margin-top: -60px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -170,7 +173,9 @@ def calc_trade(sig, price, atr):
 
 # --- 7. MAIN UI ---
 def main():
+    # SIDEBAR SETUP
     with st.sidebar:
+        # LOGO IN SIDEBAR
         if os.path.exists("logo.png"):
             st.image("logo.png", width=150)
         else:
@@ -192,6 +197,7 @@ def main():
             cls = "hot-up" if p > 0 else "hot-down"
             st.markdown(f"<div class='hot-item'><span>{s.split(':')[0]}</span><span class='{cls}'>{p:.2f}%</span></div>", unsafe_allow_html=True)
 
+    # MAIN CONTENT
     c1, c2 = st.columns([1, 8])
     with c2: 
         st.markdown(f"<div class='title-text'>KILLZONE PRO: {symbol.split(':')[0]} [{tf}]</div>", unsafe_allow_html=True)
