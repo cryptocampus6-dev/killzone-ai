@@ -54,7 +54,14 @@ def analyze(df):
 
 # --- SESSION STATE INITIALIZATION ---
 if 'coins' not in st.session_state:
-    st.session_state.coins = ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "PEPE"]
+    st.session_state.coins = [
+        "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "SHIB", "DOT",
+        "LINK", "TRX", "MATIC", "BCH", "NEAR", "UNI", "LTC", "APT", "INJ", "OP",
+        "ARB", "ETC", "FIL", "ATOM", "IMX", "VET", "HBAR", "XLM", "RENDER", "GRT",
+        "ALGO", "STX", "EGLD", "AAVE", "THETA", "FTM", "SAND", "MANA", "AXS", "EOS",
+        "XTZ", "FLOW", "KAVA", "GALA", "QNT", "CHZ", "PEPE", "WIF", "BONK", "SUI",
+        "SEI", "TIA", "ORDI", "1000SATS", "LDO", "ICP", "JUP", "PYTH", "ENS", "CRV"
+    ]
 if 'history' not in st.session_state:
     st.session_state.history = []
 if 'bot_active' not in st.session_state:
