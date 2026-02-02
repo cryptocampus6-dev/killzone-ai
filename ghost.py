@@ -1,4 +1,4 @@
-import streamlit as st
+ව්import streamlit as st
 import ccxt
 import pandas as pd
 import pandas_ta as ta
@@ -12,6 +12,10 @@ from datetime import datetime
 TELEGRAM_BOT_TOKEN = "8524773131:AAG7YAYrzt9HYu34UhUJ0af_TDamhyndBas"
 CHANNEL_ID = "-1003731551541"
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWlMq--iOTVBE4BA"
+
+# --- TIME SETTINGS (මෙන්න අලුත් වෙනස) ---
+START_HOUR = 7   # උදේ 7
+END_HOUR = 21    # රෑ 9 (24h format)
 
 # --- SIGNAL STRATEGY SETTINGS ---
 RSI_LOWER = 25
@@ -95,9 +99,25 @@ if 'bot_active' not in st.session_state:
 # --- SIDEBAR ---
 st.sidebar.title("🎛️ Control Panel")
 
-status_color = "green" if st.session_state.bot_active else "red"
-status_text = "RUNNING 🟢" if st.session_state.bot_active else "STOPPED 🔴"
+# Status Logic Setup
+coins_list = st.session_state.coins
+current_time = datetime.now(lz)
+current_hour = current_time.hour
+is_within_hours = START_HOUR <= current_hour < END_HOUR
+
+# Status Indicator Update
+if not st.session_state.bot_active:
+    status_color = "red"
+    status_text = "STOPPED 🔴"
+elif not is_within_hours:
+    status_color = "orange"
+    status_text = "SLEEPING 💤"
+else:
+    status_color = "green"
+    status_text = "RUNNING 🟢"
+
 st.sidebar.markdown(f"### Status: **:{status_color}[{status_text}]**")
+st.sidebar.caption(f"Operating Hours: {START_HOUR}:00 - {END_HOUR}:00")
 
 col1, col2 = st.sidebar.columns(2)
 if col1.button("▶️ START ENGINE"):
@@ -127,95 +147,101 @@ if st.sidebar.button("🗑️ Remove Selected"):
 
 st.sidebar.markdown("---")
 if st.sidebar.button("📡 Test Telegram"):
-    send_telegram(f"🔔 <b>Status Check:</b> Bot is {'RUNNING 🟢' if st.session_state.bot_active else 'STOPPED 🔴'}")
+    send_telegram(f"🔔 <b>Status:</b> {status_text} | Time: {current_time.strftime('%H:%M')}")
     st.sidebar.success("Test Sent!")
 
 # --- MAIN UI ---
-st.title("👻 GHOST PROTOCOL : MEMORY MODE")
+st.title("👻 GHOST PROTOCOL : TIME CONTROL MODE")
 
-now_live = datetime.now(lz).strftime("%H:%M:%S")
+now_live = current_time.strftime("%H:%M:%S")
 st.metric("🇱🇰 Sri Lanka Time", now_live)
 
+# Main Logic
 if st.session_state.bot_active:
-    st.success("✅ SYSTEM ACTIVE - Running 24/7 with Memory Protection")
     
-    coins_list = st.session_state.coins
-    current_time = datetime.now(lz)
-
-    if current_time.minute % 15 == 0 and current_time.second < 50:
-        st.markdown(f"### 🔄 Scanning Market... ({now_live})")
-        progress_bar = st.progress(0)
+    # වේලාව චෙක් කිරීම (7 AM - 9 PM)
+    if is_within_hours:
+        st.success(f"✅ SYSTEM ACTIVE - Scanning Market (Ends at {END_HOUR}:00)")
         
-        for i, coin in enumerate(coins_list):
-            try:
-                df = get_data(f"{coin}/USDT:USDT")
-                if not df.empty:
-                    sig, score, price, atr = analyze(df)
-                    
-                    if sig != "NEUTRAL":
-                        send_telegram("", is_sticker=True)
-                        time.sleep(15) 
-                        
-                        sl_dist = atr * 1.5
-                        tp_dist = sl_dist
-                        
-                        if sig == "LONG":
-                            sl = price - sl_dist
-                            tps = [price + tp_dist*x for x in range(1, 5)] 
-                            emoji = "🟢"
-                        else:
-                            sl = price + sl_dist
-                            tps = [price - tp_dist*x for x in range(1, 5)]
-                            emoji = "🔴"
-                        
-                        rr = round(abs(tps[3]-price)/abs(price-sl), 2)
-                        
-                        roi_1 = round(abs(tps[0] - price) / price * 100 * LEVERAGE_VAL, 1)
-                        roi_2 = round(abs(tps[1] - price) / price * 100 * LEVERAGE_VAL, 1)
-                        roi_3 = round(abs(tps[2] - price) / price * 100 * LEVERAGE_VAL, 1)
-                        roi_4 = round(abs(tps[3] - price) / price * 100 * LEVERAGE_VAL, 1)
-                        sl_roi = round(abs(price - sl) / price * 100 * LEVERAGE_VAL, 1)
-
-                        msg = (f"💎 <b>PREMIUM VIP SIGNAL</b> 💎\n\n"
-                                f"🪙 <b>{coin} / USDT</b>\n"
-                                f"📈 <b>{sig}</b> {emoji}\n"
-                                f"⚙️ <b>{LEVERAGE_TEXT}</b>\n\n"
-                                f"🚪 <b>Entry:</b> {price:.5f}\n\n"
-                                f"💰 <b>Take Profit:</b>\n"
-                                f"1️⃣ {tps[0]:.5f} ({roi_1}%)\n"
-                                f"2️⃣ {tps[1]:.5f} ({roi_2}%)\n"
-                                f"3️⃣ {tps[2]:.5f} ({roi_3}%)\n"
-                                f"4️⃣ {tps[3]:.5f} ({roi_4}%)\n\n"
-                                f"⛔ <b>Stop Loss:</b> {sl:.5f} (-{sl_roi}%)\n\n"
-                                f"⚖️ <b>RR:</b> 1:{rr}\n"
-                                f"🛡️ <b>Margin Use:</b> {MARGIN_TEXT}")
-                        
-                        send_telegram(msg)
-                        
-                        log_entry = {
-                            "Time": current_time.strftime("%H:%M"),
-                            "Coin": coin,
-                            "Signal": sig,
-                            "Price": price
-                        }
-                        st.session_state.history.insert(0, log_entry)
-            except: 
-                pass
+        if current_time.minute % 15 == 0 and current_time.second < 50:
+            st.markdown(f"### 🔄 Scanning Market... ({now_live})")
+            progress_bar = st.progress(0)
             
-            # මෙන්න මේ පේළිය තමයි හදපු තැන (Indentation fixed)
-            progress_bar.progress((i + 1) / len(coins_list))
-        
-        st.success("Scan Complete!")
-        time.sleep(60)
-        st.rerun()
+            for i, coin in enumerate(coins_list):
+                try:
+                    df = get_data(f"{coin}/USDT:USDT")
+                    if not df.empty:
+                        sig, score, price, atr = analyze(df)
+                        
+                        if sig != "NEUTRAL":
+                            send_telegram("", is_sticker=True)
+                            time.sleep(15) 
+                            
+                            sl_dist = atr * 1.5
+                            tp_dist = sl_dist
+                            
+                            if sig == "LONG":
+                                sl = price - sl_dist
+                                tps = [price + tp_dist*x for x in range(1, 5)] 
+                                emoji = "🟢"
+                            else:
+                                sl = price + sl_dist
+                                tps = [price - tp_dist*x for x in range(1, 5)]
+                                emoji = "🔴"
+                            
+                            rr = round(abs(tps[3]-price)/abs(price-sl), 2)
+                            
+                            roi_1 = round(abs(tps[0] - price) / price * 100 * LEVERAGE_VAL, 1)
+                            roi_2 = round(abs(tps[1] - price) / price * 100 * LEVERAGE_VAL, 1)
+                            roi_3 = round(abs(tps[2] - price) / price * 100 * LEVERAGE_VAL, 1)
+                            roi_4 = round(abs(tps[3] - price) / price * 100 * LEVERAGE_VAL, 1)
+                            sl_roi = round(abs(price - sl) / price * 100 * LEVERAGE_VAL, 1)
+
+                            msg = (f"💎 <b>PREMIUM VIP SIGNAL</b> 💎\n\n"
+                                    f"🪙 <b>{coin} / USDT</b>\n"
+                                    f"📈 <b>{sig}</b> {emoji}\n"
+                                    f"⚙️ <b>{LEVERAGE_TEXT}</b>\n\n"
+                                    f"🚪 <b>Entry:</b> {price:.5f}\n\n"
+                                    f"💰 <b>Take Profit:</b>\n"
+                                    f"1️⃣ {tps[0]:.5f} ({roi_1}%)\n"
+                                    f"2️⃣ {tps[1]:.5f} ({roi_2}%)\n"
+                                    f"3️⃣ {tps[2]:.5f} ({roi_3}%)\n"
+                                    f"4️⃣ {tps[3]:.5f} ({roi_4}%)\n\n"
+                                    f"⛔ <b>Stop Loss:</b> {sl:.5f} (-{sl_roi}%)\n\n"
+                                    f"⚖️ <b>RR:</b> 1:{rr}\n"
+                                    f"🛡️ <b>Margin Use:</b> {MARGIN_TEXT}")
+                            
+                            send_telegram(msg)
+                            
+                            log_entry = {
+                                "Time": current_time.strftime("%H:%M"),
+                                "Coin": coin,
+                                "Signal": sig,
+                                "Price": price
+                            }
+                            st.session_state.history.insert(0, log_entry)
+                except: pass
+                
+                progress_bar.progress((i + 1) / len(coins_list))
+            
+            st.success("Scan Complete!")
+            time.sleep(60)
+            st.rerun()
+        else:
+            time.sleep(1)
+            if current_time.second % 15 == 0:
+                st.rerun()
 
     else:
-        time.sleep(1)
-        if current_time.second % 15 == 0:
-            st.rerun()
+        # වෙලාව පැනලා නම් (Night Time)
+        st.warning(f"💤 **SLEEPING MODE** - Market scanning paused. Will resume at {START_HOUR}:00 AM.")
+        st.caption("UptimeRobot එක වැඩ කරනවා, නමුත් බොටා නිදි. කිසිම Data එකක් වැය වෙන්නේ නෑ.")
+        time.sleep(10) # 10 seconds sleep loop
+        st.rerun()
 
 else:
-    st.warning("⚠️ Engine is STOPPED manually. Refresh won't start it.")
+    # Manually Stopped
+    st.error("⚠️ Engine is STOPPED manually.")
     time.sleep(2) 
 
 st.divider()
