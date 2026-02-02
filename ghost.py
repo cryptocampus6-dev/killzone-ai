@@ -192,7 +192,7 @@ if st.sidebar.button("📡 Test Telegram"):
     send_telegram("", is_sticker=True)
     time.sleep(2)
     send_telegram
-       (f"💎 <b>PREMIUM VIP SIGNAL</b> 💎\n\n"
+       (f"💎 <b>PREMIUM VIP SIGNAL</b> 💎\n\n")
                                     f"🪙 <b>{coin} / USDT</b>\n"
                                     f"📈 <b>{sig}</b> {emoji}\n"
                                     f"⚙️ <b>{LEVERAGE_TEXT}</b>\n\n"
