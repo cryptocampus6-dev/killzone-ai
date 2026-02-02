@@ -13,19 +13,20 @@ TELEGRAM_BOT_TOKEN = "8524773131:AAG7YAYrzt9HYu34UhUJ0af_TDamhyndBas"
 CHANNEL_ID = "-1003731551541"
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWlMq--iOTVBE4BA"
 
+# --- TIME SETTINGS ---
 START_HOUR = 7
 END_HOUR = 21
 
-# --- MULTI-METHOD SETTINGS (10 METHODS) ---
-# 1. RSI, 2. SMA, 3. ATR, 4. SMC, 5. Elliott Wave, 6. ICT, 7. CRT, 8. MSNR, 9. Fibonacci, 10. News
-SCORE_THRESHOLD = 85 # දැන් නීති 10ක් නිසා තවත් තද කළා
+# --- STRATEGY SETTINGS (10 METHODS) ---
+# Methods: 1.RSI, 2.SMA, 3.ATR, 4.SMC, 5.ICT, 6.Elliott, 7.Fibonacci, 8.MSNR, 9.CRT, 10.News
+SCORE_THRESHOLD = 85
 
 LEVERAGE_TEXT = "Isolated 50X"  
 LEVERAGE_VAL = 50             
 MARGIN_TEXT = "1% - 3%"       
 STATUS_FILE = "bot_status.txt"
 
-st.set_page_config(page_title="Ghost Protocol Ultimate", page_icon="👻", layout="wide")
+st.set_page_config(page_title="Ghost Ultimate Dashboard", page_icon="👻", layout="wide")
 lz = pytz.timezone('Asia/Colombo')
 
 # --- MEMORY FUNCTIONS ---
@@ -39,7 +40,7 @@ def save_status(is_active):
     with open(STATUS_FILE, "w") as f:
         f.write("TRUE" if is_active else "FALSE")
 
-# --- FUNCTIONS ---
+# --- TELEGRAM FUNCTIONS ---
 def send_telegram(msg, is_sticker=False):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/"
     try:
@@ -50,127 +51,137 @@ def send_telegram(msg, is_sticker=False):
         return True
     except: return False
 
+# --- DATA & ANALYSIS (10 METHODS) ---
 def get_data(symbol):
     try:
         exchange = ccxt.mexc({'options': {'defaultType': 'swap'}})
-        bars = exchange.fetch_ohlcv(symbol, timeframe='15m', limit=200) # දත්ත වැඩිපුර ගත්තා SMC සඳහා
+        bars = exchange.fetch_ohlcv(symbol, timeframe='15m', limit=150)
         df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         return df
     except: return pd.DataFrame()
 
-# --- THE 10 METHOD ANALYZER ---
 def analyze_ultimate(df):
-    if df.empty or len(df) < 100: return "NEUTRAL", 50, 0, 0
+    if df.empty or len(df) < 100: return "NEUTRAL", 50, 0, 0, []
     
-    # Base Indicators
+    # 1, 2, 3. RSI, SMA, ATR
     df['rsi'] = ta.rsi(df['close'], 14)
     df['sma50'] = ta.sma(df['close'], 50)
     df['atr'] = ta.atr(df['high'], df['low'], df['close'], 14)
     
     curr = df.iloc[-1]
     prev = df.iloc[-2]
-    high_max = df['high'].max()
-    low_min = df['low'].min()
-    
     score = 50
     methods_hit = []
 
-    # 1. RSI (25/75)
+    # Strategy Logic
     if curr['rsi'] < 25: score += 10; methods_hit.append("RSI")
     elif curr['rsi'] > 75: score -= 10; methods_hit.append("RSI")
-
-    # 2. SMA 50 Trend
+    
     if curr['close'] > curr['sma50']: score += 10; methods_hit.append("SMA")
     else: score -= 10; methods_hit.append("SMA")
 
-    # 3. Fibonacci (0.618 Retracement)
-    fib_618 = low_min + (high_max - low_min) * 0.618
-    if abs(curr['close'] - fib_618) / curr['close'] < 0.005:
-        score += 15; methods_hit.append("Fibonacci")
+    # 4. SMC MSS Check
+    if curr['close'] > df['high'].iloc[-20:-1].max(): score += 15; methods_hit.append("SMC")
+    elif curr['close'] < df['low'].iloc[-20:-1].min(): score -= 15; methods_hit.append("SMC")
 
-    # 4. SMC Logic (Market Structure Shift)
-    if curr['close'] > df['high'].iloc[-20:-1].max():
-        score += 15; methods_hit.append("SMC (MSS)")
-    elif curr['close'] < df['low'].iloc[-20:-1].min():
-        score -= 15; methods_hit.append("SMC (MSS)")
-
-    # 5. ICT Concept (Liquidity Grab/FVG)
+    # 5. ICT Liquidity
     if curr['low'] < df['low'].iloc[-10:-1].min() and curr['close'] > curr['open']:
-        score += 15; methods_hit.append("ICT (Liq Grab)")
+        score += 15; methods_hit.append("ICT")
 
-    # 6. Elliott Wave (Simple Wave 3 identification)
+    # 6. Fibonacci 0.618
+    fib_618 = df['low'].min() + (df['high'].max() - df['low'].min()) * 0.618
+    if abs(curr['close'] - fib_618) / curr['close'] < 0.005:
+        score += 10; methods_hit.append("Fibonacci")
+
+    # 7. Elliott Wave Lite
     if curr['close'] > prev['close'] and df['volume'].iloc[-1] > df['volume'].mean():
-        score += 10; methods_hit.append("Elliott Wave")
+        score += 5; methods_hit.append("Elliott")
 
-    # 7 & 8. MSNR (Market Support/Resistance) & CRT
-    res = df['high'].iloc[-50:].max()
+    # 8, 9. MSNR & CRT
     sup = df['low'].iloc[-50:].min()
-    if abs(curr['close'] - sup) < (curr['atr']): score += 10; methods_hit.append("MSNR")
-    if abs(curr['close'] - res) < (curr['atr']): score -= 10; methods_hit.append("MSNR")
+    res = df['high'].iloc[-50:].max()
+    if abs(curr['close'] - sup) < curr['atr']: score += 10; methods_hit.append("MSNR")
+    if abs(curr['close'] - res) < curr['atr']: score -= 10; methods_hit.append("CRT")
 
-    # 9. Fundamental News (Check for high volatility hours)
-    # News සාමාන්‍යයෙන් එන්නේ ලංකාවේ වෙලාවෙන් 6:00 PM - 8:30 PM අතර
-    now_lk = datetime.now(pytz.timezone('Asia/Colombo'))
-    if 18 <= now_lk.hour <= 20:
-        methods_hit.append("News Alert ⚠️")
-
-    # 10. ATR Volatility Check
-    if curr['atr'] > df['atr'].mean(): score += 5
+    # 10. News (Time Based Alert)
+    now_lk = datetime.now(lz)
+    if 18 <= now_lk.hour <= 21: methods_hit.append("News-High-Vol")
 
     sig = "LONG" if score >= SCORE_THRESHOLD else "SHORT" if score <= (100 - SCORE_THRESHOLD) else "NEUTRAL"
     return sig, score, curr['close'], curr['atr'], methods_hit
 
-# --- MAIN ENGINE ---
+# --- UI & DASHBOARD ---
 if 'coins' not in st.session_state:
-    st.session_state.coins = ["BTC", "ETH", "SOL", "XRP", "BNB", "PEPE", "WIF", "SUI"] # Sample list
-
+    st.session_state.coins = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "PEPE", "WIF", "SUI"]
 if 'history' not in st.session_state: st.session_state.history = []
 if 'bot_active' not in st.session_state: st.session_state.bot_active = load_status()
 
-st.sidebar.title("👻 Ghost Ultimate Control")
-current_time = datetime.now(lz)
-is_within_hours = START_HOUR <= current_time.hour < END_HOUR
+# Sidebar (Back to Memory Mode Style)
+st.sidebar.title("🎛️ Control Panel")
+status_color = "green" if st.session_state.bot_active else "red"
+st.sidebar.markdown(f"Status: **:{status_color}[{'RUNNING' if st.session_state.bot_active else 'STOPPED'}]**")
 
-if st.sidebar.button("▶️ START"):
+col1, col2 = st.sidebar.columns(2)
+if col1.button("▶️ START"):
     save_status(True); st.session_state.bot_active = True; st.rerun()
-if st.sidebar.button("⏹️ STOP"):
+if col2.button("⏹️ STOP"):
     save_status(False); st.session_state.bot_active = False; st.rerun()
 
-st.title("👻 GHOST PROTOCOL : ULTIMATE EDITION")
-st.write(f"Methods Active: **RSI, SMA, ATR, SMC, ICT, Elliott Wave, Fibonacci, MSNR, CRT, Fundamental News**")
+st.sidebar.divider()
+st.sidebar.subheader("🪙 Coin Manager")
+new_c = st.sidebar.text_input("Add Coin").upper()
+if st.sidebar.button("➕ Add"):
+    if new_c and new_c not in st.session_state.coins: st.session_state.coins.append(new_c); st.rerun()
 
-if st.session_state.bot_active and is_within_hours:
-    if current_time.minute % 15 == 0 and current_time.second < 50:
-        st.info("🔄 Running 10-Method Institutional Scan...")
-        for coin in st.session_state.coins:
-            df = get_data(f"{coin}/USDT:USDT")
-            sig, score, price, atr, methods = analyze_ultimate(df)
-            
-            if sig != "NEUTRAL":
-                send_telegram("", is_sticker=True)
-                time.sleep(15)
-                
-                # Signal logic... (Targets, SL etc - Same as previous)
-                sl_dist = atr * 1.5
-                tp_dist = sl_dist
-                sl = price - sl_dist if sig == "LONG" else price + sl_dist
-                tps = [price + (tp_dist*x) if sig == "LONG" else price - (tp_dist*x) for x in range(1, 5)]
-                
-                methods_str = ", ".join(methods)
-                msg = (f"👻 <b>GHOST ULTIMATE SIGNAL</b>\n\n"
-                       f"🪙 <b>{coin}/USDT</b> | {sig}\n"
-                       f"🛠 <b>Methods:</b> {methods_str}\n"
-                       f"🎯 <b>Entry:</b> {price:.4f}\n"
-                       f"🛑 <b>SL:</b> {sl:.4f}\n"
-                       f"⚙️ <b>Leverage:</b> {LEVERAGE_TEXT}")
-                send_telegram(msg)
-                st.session_state.history.insert(0, {"Time": current_time.strftime("%H:%M"), "Coin": coin, "Signal": sig})
-        time.sleep(60); st.rerun()
+rem_c = st.sidebar.selectbox("Remove Coin", st.session_state.coins)
+if st.sidebar.button("🗑️ Remove"):
+    st.session_state.coins.remove(rem_c); st.rerun()
 
-elif not is_within_hours:
-    st.warning("💤 Sleeping Mode (Active 07:00 - 21:00)")
+# Main UI
+st.title("👻 GHOST PROTOCOL : ULTIMATE DASHBOARD")
+current_time = datetime.now(lz)
+st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
+
+is_within_hours = START_HOUR <= current_time.hour < END_HOUR
+
+if st.session_state.bot_active:
+    if is_within_hours:
+        st.success("✅ SYSTEM ACTIVE - Monitoring 10 Analysis Methods")
+        if current_time.minute % 15 == 0 and current_time.second < 50:
+            st.info("🔄 Institutional Scan in Progress...")
+            progress = st.progress(0)
+            for i, coin in enumerate(st.session_state.coins):
+                df = get_data(f"{coin}/USDT:USDT")
+                sig, score, price, atr, methods = analyze_ultimate(df)
+                if sig != "NEUTRAL":
+                    send_telegram("", is_sticker=True); time.sleep(15)
+                    sl = price - (atr*1.5) if sig == "LONG" else price + (atr*1.5)
+                    tps = [price + (atr*1.5*x) if sig == "LONG" else price - (atr*1.5*x) for x in range(1, 5)]
+                    
+                    roi = [round(abs(t - price)/price * 100 * LEVERAGE_VAL, 1) for t in tps]
+                    msg = (f"💎 <b>ULTIMATE VIP SIGNAL</b> 💎\n\n"
+                           f"🪙 <b>{coin}/USDT</b> | {sig} {'🟢' if sig=='LONG' else '🔴'}\n"
+                           f"🛠 <b>Methods:</b> {', '.join(methods)}\n"
+                           f"⚙️ <b>{LEVERAGE_TEXT}</b>\n\n"
+                           f"🚪 <b>Entry:</b> {price:.5f}\n\n"
+                           f"🎯 <b>Targets:</b>\n"
+                           f"1️⃣ {tps[0]:.5f} ({roi[0]}%)\n"
+                           f"2️⃣ {tps[1]:.5f} ({roi[1]}%)\n"
+                           f"3️⃣ {tps[2]:.5f} ({roi[2]}%)\n"
+                           f"4️⃣ {tps[3]:.5f} ({roi[3]}%)\n\n"
+                           f"⛔ <b>SL:</b> {sl:.5f}\n"
+                           f"🛡️ <b>Margin:</b> {MARGIN_TEXT}")
+                    send_telegram(msg)
+                    st.session_state.history.insert(0, {"Time": current_time.strftime("%H:%M"), "Coin": coin, "Signal": sig, "Methods": len(methods)})
+                progress.progress((i+1)/len(st.session_state.coins))
+            time.sleep(60); st.rerun()
+    else:
+        st.warning(f"💤 Sleeping Mode (Active {START_HOUR}:00 - {END_HOUR}:00)")
 else:
-    st.error("⏹ Bot is Stopped Manually")
+    st.error("⏹ Engine Stopped Manually")
 
+st.divider()
+st.subheader("📜 Recent Signals (Session History)")
+if st.session_state.history: st.table(pd.DataFrame(st.session_state.history))
+else: st.info("No signals yet.")
 time.sleep(10); st.rerun()
