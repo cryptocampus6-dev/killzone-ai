@@ -7,9 +7,8 @@ import requests
 import pytz
 from datetime import datetime, timedelta
 
-# --- USER SETTINGS ---
-# ඔයා එවපු අලුත්ම Token එක මෙතන තියෙන්නේ
-TELEGRAM_BOT_TOKEN = "8524773131:AAE-ByPKx7x0ClDOLEQg1aw8j0tWYb41_CY"
+# --- USER SETTINGS (ඔයාගේ අලුත්ම Token එක මෙතන දැම්මා) ---
+TELEGRAM_BOT_TOKEN = "8524773131:AAG7YAYrzt9HYu34UhUJ0af_TDamhyndBas"
 CHANNEL_ID = "-1003731551541"
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWIMq--iOTVBE4BA"
 
@@ -60,7 +59,7 @@ def main():
     
     # --- 🛠️ DEBUGGER SECTION 🛠️ ---
     st.sidebar.header("🔍 Token Inspector")
-    # මේකෙන් බලාගන්න පුළුවන් ඇප් එක පාවිච්චි කරන ඇත්තම ටෝකන් එක මොකක්ද කියලා
+    # අලුත් ටෝකන් එක හරියටම අප්ඩේට් වුණාද කියලා මෙතනින් බලාගන්න
     st.sidebar.warning(f"🔑 USED TOKEN:\n{TELEGRAM_BOT_TOKEN}")
 
     st.sidebar.markdown("---")
