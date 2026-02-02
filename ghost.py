@@ -16,7 +16,7 @@ STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWlMq--i
 # --- TIME SETTINGS ---
 START_HOUR = 7   # උදේ 7
 END_HOUR = 21    # රෑ 9
-MAX_DAILY_SIGNALS = 8 # දවසට උපරිම සිග්නල් ගණන
+MAX_DAILY_SIGNALS = 8 # දවසට මුළු සිග්නල් ගණන
 
 # --- 10 METHODS CONFIG ---
 SCORE_THRESHOLD = 85 
@@ -140,14 +140,18 @@ if 'history' not in st.session_state: st.session_state.history = []
 if 'bot_active' not in st.session_state: st.session_state.bot_active = load_status()
 if 'force_scan' not in st.session_state: st.session_state.force_scan = False
 
-# Daily Limit Tracking
+# --- MEMORY FOR DAILY COINS ---
+# This list remembers which coins we signaled today
+if 'signaled_coins' not in st.session_state: st.session_state.signaled_coins = []
+
+# Daily Limit & Coin Reset Logic
 today_str = datetime.now(lz).strftime("%Y-%m-%d")
 if 'last_reset_date' not in st.session_state or st.session_state.last_reset_date != today_str:
     st.session_state.last_reset_date = today_str
     st.session_state.daily_count = 0
+    st.session_state.signaled_coins = [] # Clear the list for new day
 
-# Scan Block Tracking (To fix auto-scan issue)
-# We track the "Block ID" (e.g., 12:00 is block 48, 12:15 is block 49)
+# Scan Block Tracking
 if 'last_scan_block_id' not in st.session_state: st.session_state.last_scan_block_id = -1
 
 # --- SIDEBAR ---
@@ -176,6 +180,10 @@ st.sidebar.markdown(f"### Status: **:{status_color}[{status_text}]**")
 st.sidebar.caption(f"Time: {START_HOUR}:00 - {END_HOUR}:00")
 st.sidebar.metric("Daily Signals", f"{st.session_state.daily_count} / {MAX_DAILY_SIGNALS}")
 
+# Show Signaled Coins List (Optional - for you to see)
+if st.session_state.signaled_coins:
+    st.sidebar.caption(f"Today's Signals: {', '.join(st.session_state.signaled_coins)}")
+
 col1, col2 = st.sidebar.columns(2)
 if col1.button("▶️ START"):
     save_status(True); st.session_state.bot_active = True; st.rerun()
@@ -184,7 +192,6 @@ if col2.button("⏹️ STOP"):
 
 st.sidebar.markdown("---")
 
-# --- MANUAL TRIGGER ---
 if st.sidebar.button("⚡ FORCE SCAN NOW"):
     st.session_state.force_scan = True
     st.rerun()
@@ -222,7 +229,6 @@ st.metric("🇱🇰 Sri Lanka Time", now_live)
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
 
 def run_scan():
-    # Double check limit before running
     if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
         st.warning("⚠️ Daily Signal Limit Reached. Skipping Scan.")
         return
@@ -232,6 +238,11 @@ def run_scan():
     status_area = st.empty()
     
     for i, coin in enumerate(coins_list):
+        # --- NEW: SKIP IF ALREADY SIGNALED TODAY ---
+        if coin in st.session_state.signaled_coins:
+            progress_bar.progress((i + 1) / len(coins_list))
+            continue # Skip this coin immediately
+
         try:
             df = get_data(f"{coin}/USDT:USDT")
             if not df.empty:
@@ -243,16 +254,13 @@ def run_scan():
                 time.sleep(0.1)
 
                 if sig != "NEUTRAL":
-                    # Check limit again just in case
                     if st.session_state.daily_count < MAX_DAILY_SIGNALS:
                         send_telegram("", is_sticker=True)
                         time.sleep(15)
                         
                         # --- LEVERAGE FIX: 50x Optimized SL ---
-                        # 0.7 ATR reduces the distance.
-                        # At 50x Leverage, this targets 50% - 70% ROI Loss.
                         sl_dist = atr * 0.7 
-                        tp_dist = sl_dist * 2.0  # RR 1:2 Minimum
+                        tp_dist = sl_dist * 2.0  
                         
                         if sig == "LONG":
                             sl = price - sl_dist
@@ -294,7 +302,11 @@ def run_scan():
                         
                         send_telegram(msg)
                         st.session_state.history.insert(0, {"Time": current_time.strftime("%H:%M"), "Coin": coin, "Signal": sig, "Methods": methods_str})
-                        st.session_state.daily_count += 1 # Count Up
+                        
+                        # --- MARK AS SIGNALED ---
+                        st.session_state.daily_count += 1
+                        st.session_state.signaled_coins.append(coin) # Add to blacklist for today
+                        
         except: pass
         progress_bar.progress((i + 1) / len(coins_list))
     
@@ -304,26 +316,18 @@ def run_scan():
 
 with tab1:
     if st.session_state.bot_active:
-        # Check if limit reached
         if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
             st.warning(f"🛑 Daily Limit Reached ({st.session_state.daily_count}/{MAX_DAILY_SIGNALS}). Bot is sleeping until tomorrow.")
             time.sleep(60); st.rerun()
 
         elif is_within_hours:
-            # --- AUTO SCAN LOGIC (FIXED) ---
-            # Calculate unique ID for the current 15-min block (0-95 per day)
             current_block_id = current_time.hour * 4 + (current_time.minute // 15)
-            
-            # Allow scan if we haven't done THIS block yet, AND we are within the first 5 mins of the block
-            # This '5 mins' gives UptimeRobot enough time to hit the server
             is_start_of_block = (current_time.minute % 15) <= 5 
 
             if (current_block_id != st.session_state.last_scan_block_id) and is_start_of_block:
-                st.session_state.last_scan_block_id = current_block_id # Mark as scanned
+                st.session_state.last_scan_block_id = current_block_id
                 run_scan()
                 st.rerun()
-            
-            # --- MANUAL FORCE SCAN ---
             elif st.session_state.force_scan:
                 run_scan()
                 st.session_state.force_scan = False 
@@ -332,8 +336,6 @@ with tab1:
                 next_min = 15 - (current_time.minute % 15)
                 st.info(f"⏳ **Monitoring Market...** (Next scan window in approx. {next_min} mins)")
                 st.caption(f"Signals Today: {st.session_state.daily_count} / {MAX_DAILY_SIGNALS}")
-                
-                # Auto-refresh mechanism to keep checking
                 time.sleep(5) 
                 st.rerun()
         else:
