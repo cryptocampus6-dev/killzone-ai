@@ -1,5 +1,3 @@
-
-
 import streamlit as st
 import ccxt
 import pandas as pd
@@ -9,7 +7,8 @@ import time
 import os
 
 # --- 1. CONFIGURATION (BRANDING) ---
-# මෙතනින් තමයි App එකේ නම සහ Icon එක තීරණය වෙන්නේ
+# මෙම කොටස අනිවාර්යයෙන්ම මුලින්ම තිබිය යුතුයි.
+# මේකෙන් තමයි App එකේ Title එක සහ Browser Tab එකේ Icon එක හැදෙන්නේ.
 st.set_page_config(
     page_title="KillZone Pro Trading",
     page_icon="logo.png",
@@ -17,18 +16,30 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- 2. STYLES ---
+# --- 2. PROFESSIONAL UI STYLES (CLEAN LOOK) ---
+# Streamlit ලාංඡන සහ අනවශ්‍ය දේවල් හංගා, Software එකක් වගේ පෙන්වීමට
 st.markdown("""
     <style>
     .stApp { background-color: #0b0e11; color: #eaecef; }
     [data-testid="stSidebar"] { background-color: #1e2329; }
+    
+    /* Hide Streamlit Branding */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* Card Styles */
     .signal-box { background-color: #1e2329; border: 1px solid #2b3139; border-radius: 10px; padding: 20px; }
     .sig-val { color: #fff; font-weight: bold; font-family: monospace; }
     .sig-long { color: #0ECB81; }
     .sig-short { color: #F6465D; }
+    
+    /* Hot Coins Styles */
     .hot-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #333; font-size: 13px; }
     .hot-up { color: #0ECB81; }
     .hot-down { color: #F6465D; }
+    
+    /* Title Styles */
     .title-text { font-size: 35px; font-weight: bold; color: #ffffff; margin-top: 15px; }
     </style>
     """, unsafe_allow_html=True)
@@ -152,7 +163,14 @@ def calc_trade(sig, price, atr):
 
 # --- 7. MAIN APP UI ---
 def main():
+    # SIDEBAR SETUP
     with st.sidebar:
+        # LOGO IN SIDEBAR (Professional Look)
+        if os.path.exists("logo.png"):
+            st.image("logo.png", width=150)
+        else:
+            st.markdown("### 🚀 KILLZONE PRO")
+
         st.markdown("### ⚙️ SETTINGS")
         all_syms = get_symbols()
         if "AI/USDT:USDT" not in all_syms: all_syms.append("AI/USDT:USDT")
@@ -163,19 +181,22 @@ def main():
         
         tf = st.selectbox("TIMEFRAME", ["5m", "15m", "1h", "4h"], index=1)
         
+        st.markdown("---")
         st.markdown("### 🔥 HOT COINS")
         for s, p in get_hot_coins():
             cls = "hot-up" if p > 0 else "hot-down"
             st.markdown(f"<div class='hot-item'><span>{s.split(':')[0]}</span><span class='{cls}'>{p:.2f}%</span></div>", unsafe_allow_html=True)
 
+    # MAIN CONTENT
     c1, c2 = st.columns([1, 8])
     with c1: 
-        if os.path.exists("logo.png"): st.image("logo.png", width=100)
-        else: st.markdown("🚀")
-    with c2: st.markdown(f"<div class='title-text'>KILLZONE PRO: {symbol.split(':')[0]} [{tf}]</div>", unsafe_allow_html=True)
+        # Main Logo (Optional since it is in sidebar now, but kept for balance)
+        if os.path.exists("logo.png"): st.image("logo.png", width=80)
+    with c2: 
+        st.markdown(f"<div class='title-text'>KILLZONE PRO: {symbol.split(':')[0]} [{tf}]</div>", unsafe_allow_html=True)
 
-    if st.button("START ANALYSIS 🚀"):
-        with st.spinner('Analyzing...'):
+    if st.button("START ANALYSIS 🚀", use_container_width=True):
+        with st.spinner('Analyzing Markets...'):
             df = get_data(symbol, tf)
         
         if not df.empty:
@@ -185,7 +206,6 @@ def main():
             col1, col2 = st.columns([1, 2])
             with col1:
                 if sig != "NEUTRAL":
-                    # Generating HTML safely
                     html_code = create_card_html(sig, score, lev, price, reasons, tps, sl, tp_rois, sl_roi)
                     st.markdown(html_code, unsafe_allow_html=True)
                 else: 
