@@ -7,12 +7,16 @@ import requests
 import pytz
 from datetime import datetime
 
-# --- SETTINGS ---
+# --- USER SETTINGS ---
 TELEGRAM_BOT_TOKEN = "8524773131:AAG7YAYrzt9HYu34UhUJ0af_TDamhyndBas"
 CHANNEL_ID = "-1003731551541"
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWIMq--iOTVBE4BA"
 
-# Page Config
+# --- SIGNAL SETTINGS ---
+LEVERAGE_TEXT = "Isolated 50X"  # මැසේජ් එකේ පෙන්නන ලෙවරේජ් එක
+LEVERAGE_VAL = 50             # ප්‍රතිශත ගණන් හදන්න පාවිච්චි කරන ගාණ
+MARGIN_TEXT = "1% - 3%"       # Margin Use
+
 st.set_page_config(page_title="Ghost Protocol Dashboard", page_icon="👻", layout="wide")
 lz = pytz.timezone('Asia/Colombo')
 
@@ -53,6 +57,7 @@ def analyze(df):
     return sig, score, curr['close'], curr['atr']
 
 # --- SESSION STATE INITIALIZATION ---
+# Top 60 Most Active Coins
 if 'coins' not in st.session_state:
     st.session_state.coins = [
         "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "SHIB", "DOT",
@@ -62,6 +67,7 @@ if 'coins' not in st.session_state:
         "XTZ", "FLOW", "KAVA", "GALA", "QNT", "CHZ", "PEPE", "WIF", "BONK", "SUI",
         "SEI", "TIA", "ORDI", "1000SATS", "LDO", "ICP", "JUP", "PYTH", "ENS", "CRV"
     ]
+
 if 'history' not in st.session_state:
     st.session_state.history = []
 if 'bot_active' not in st.session_state:
@@ -88,7 +94,7 @@ st.sidebar.markdown("---")
 
 # Coin Manager
 st.sidebar.subheader("🪙 Coin Manager")
-new_coin = st.sidebar.text_input("Add Coin (e.g. ADA)", "").upper()
+new_coin = st.sidebar.text_input("Add Coin (e.g. SUI)", "").upper()
 if st.sidebar.button("➕ Add Coin"):
     if new_coin and new_coin not in st.session_state.coins:
         st.session_state.coins.append(new_coin)
@@ -104,9 +110,21 @@ if st.sidebar.button("🗑️ Remove Selected"):
 
 st.sidebar.markdown("---")
 # Test Button
-if st.sidebar.button("📡 Test Telegram"):
-    send_telegram("🔔 <b>Manual Test:</b> Dashboard is connected!")
-    st.sidebar.success("Sent!")
+if st.sidebar.button("📡 Test Telegram Message"):
+    # Sample Test Message with the new format
+    send_telegram(
+        f"💎 <b>PREMIUM VIP SIGNAL</b> 💎\n\n"
+        f"🪙 <b>TEST/USDT</b>\n"
+        f"📈 <b>LONG</b> 🟢\n"
+        f"⚙️ <b>{LEVERAGE_TEXT}</b>\n\n"
+        f"🚪 <b>Entry:</b> 100.00\n\n"
+        f"💰 <b>Take Profit:</b>\n"
+        f"1️⃣ 101.00 (50.0%)\n"
+        f"2️⃣ 102.00 (100.0%)\n\n"
+        f"⛔ <b>Stop Loss:</b> 99.00 (-50.0%)\n"
+        f"🛡️ <b>Margin Use:</b> {MARGIN_TEXT}"
+    )
+    st.sidebar.success("Test Message Sent!")
 
 # --- MAIN DASHBOARD ---
 st.title("👻 GHOST PROTOCOL : DASHBOARD")
@@ -122,24 +140,16 @@ with tab1:
     if st.session_state.bot_active:
         st.success("✅ Engine is Running... Scanning Market every 15 mins.")
         
-        # This loop runs continuously when active
         placeholder = st.empty()
-        
-        # Run Loop Logic
-        # Note: In Streamlit Cloud, we iterate a few times and then sleep to prevent timeout, 
-        # or rely on UptimeRobot to keep triggering it.
-        # Here we use a loop that updates the UI.
-        
         coins_list = st.session_state.coins
-        placeholder.markdown(f"**🔍 Scanning {len(coins_list)} Coins: {', '.join(coins_list)}**")
+        placeholder.markdown(f"**🔍 Scanning {len(coins_list)} Coins...**")
         
         current_time = datetime.now(lz)
         
-        # Only scan if minutes are 00, 15, 30, 45 (approx) to save resources
-        # Or just scan every loop for demo
-        # For real usage:
+        # Scan Logic (Runs every 15 mins approx)
         if current_time.minute % 15 == 0 and current_time.second < 40:
             progress_bar = st.progress(0)
+            
             for i, coin in enumerate(coins_list):
                 try:
                     df = get_data(f"{coin}/USDT:USDT")
@@ -147,34 +157,55 @@ with tab1:
                         sig, score, price, atr = analyze(df)
                         
                         if sig != "NEUTRAL":
-                            # Send Alert
                             send_telegram("", is_sticker=True)
+                            
+                            # Calculate Targets & Stop Loss
                             sl_dist = atr * 1.5
                             tp_dist = sl_dist
+                            
                             if sig == "LONG":
                                 sl = price - sl_dist
-                                tps = [price + tp_dist*x for x in range(1, 5)]
+                                tps = [price + tp_dist*x for x in range(1, 5)] # 4 Targets
+                                emoji = "🟢"
                             else:
                                 sl = price + sl_dist
-                                tps = [price - tp_dist*x for x in range(1, 5)]
+                                tps = [price - tp_dist*x for x in range(1, 5)] # 4 Targets
+                                emoji = "🔴"
                             
-                            rr = round(abs(tps[3]-price)/abs(price-sl), 2)
-                            msg = (f"💎 <b>VIP SIGNAL</b>\n\n"
-                                   f"🪙 <b>{coin}/USDT</b>\n"
-                                   f"Direction: <b>{sig}</b>\n"
-                                   f"Entry: {price:.4f}\n"
-                                   f"Targets: {tps[0]:.4f} | {tps[1]:.4f} | {tps[2]:.4f}\n"
-                                   f"Stop Loss: {sl:.4f}\n"
-                                   f"RR: 1:{rr}")
+                            # RR & ROI Calculation
+                            rr = round(abs(tps[2]-price)/abs(price-sl), 2) # RR based on TP3
+                            
+                            # Calculate percentages for display (Price change % * Leverage)
+                            roi_1 = round(abs(tps[0] - price) / price * 100 * LEVERAGE_VAL, 1)
+                            roi_2 = round(abs(tps[1] - price) / price * 100 * LEVERAGE_VAL, 1)
+                            roi_3 = round(abs(tps[2] - price) / price * 100 * LEVERAGE_VAL, 1)
+                            roi_4 = round(abs(tps[3] - price) / price * 100 * LEVERAGE_VAL, 1)
+                            sl_roi = round(abs(price - sl) / price * 100 * LEVERAGE_VAL, 1)
+
+                            # --- NEW MESSAGE FORMAT ---
+                            msg = (f"💎 <b>PREMIUM VIP SIGNAL</b> 💎\n\n"
+                                   f"🪙 <b>{coin} / USDT</b>\n"
+                                   f"📈 <b>{sig}</b> {emoji}\n"
+                                   f"⚙️ <b>{LEVERAGE_TEXT}</b>\n\n"
+                                   f"🚪 <b>Entry:</b> {price:.5f}\n\n"
+                                   f"💰 <b>Take Profit:</b>\n"
+                                   f"1️⃣ {tps[0]:.5f} ({roi_1}%)\n"
+                                   f"2️⃣ {tps[1]:.5f} ({roi_2}%)\n"
+                                   f"3️⃣ {tps[2]:.5f} ({roi_3}%)\n"
+                                   f"4️⃣ {tps[3]:.5f} ({roi_4}%)\n\n"
+                                   f"⛔ <b>Stop Loss:</b> {sl:.5f} (-{sl_roi}%)\n\n"
+                                   f"⚖️ <b>RR:</b> 1:{rr}\n"
+                                   f"🛡️ <b>Margin Use:</b> {MARGIN_TEXT}")
+                            
                             send_telegram(msg)
                             
-                            # Log to History
+                            # Log History
                             log_entry = {
                                 "Time": current_time.strftime("%H:%M"),
                                 "Coin": coin,
                                 "Signal": sig,
-                                "Price": price,
-                                "Score": score
+                                "Entry": price,
+                                "Status": "Sent ✅"
                             }
                             st.session_state.history.insert(0, log_entry)
                     
@@ -182,13 +213,13 @@ with tab1:
                 except: pass
             
             st.success("Scan Complete!")
-            time.sleep(60) # Wait to avoid double signals in same minute
+            time.sleep(60)
             st.rerun()
             
         else:
-            time.sleep(1) # Idle wait
+            time.sleep(1)
             if current_time.second % 10 == 0:
-                st.rerun() # Refresh clock
+                st.rerun()
             
     else:
         st.warning("⚠️ Engine is STOPPED. Click 'START ENGINE' in sidebar.")
@@ -198,4 +229,4 @@ with tab2:
     if st.session_state.history:
         st.table(pd.DataFrame(st.session_state.history))
     else:
-        st.info("No signals generated yet since last reboot.")
+        st.info("No signals generated yet.")
