@@ -7,7 +7,8 @@ import requests
 import pytz
 from datetime import datetime, timedelta
 
-# --- USER SETTINGS (ඔයාගේ අලුත් Token එක මෙතනට දැම්මා) ---
+# --- USER SETTINGS ---
+# ඔයා එවපු අලුත්ම Token එක මෙතන තියෙන්නේ
 TELEGRAM_BOT_TOKEN = "8524773131:AAE-ByPKx7x0ClDOLEQg1aw8j0tWYb41_CY"
 CHANNEL_ID = "-1003731551541"
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWIMq--iOTVBE4BA"
@@ -57,8 +58,14 @@ def analyze(df):
 def main():
     st.title("👻 GHOST PROTOCOL : FINAL EDITION")
     
-    # Sidebar Test Button with Debugger
+    # --- 🛠️ DEBUGGER SECTION 🛠️ ---
+    st.sidebar.header("🔍 Token Inspector")
+    # මේකෙන් බලාගන්න පුළුවන් ඇප් එක පාවිච්චි කරන ඇත්තම ටෝකන් එක මොකක්ද කියලා
+    st.sidebar.warning(f"🔑 USED TOKEN:\n{TELEGRAM_BOT_TOKEN}")
+
+    st.sidebar.markdown("---")
     st.sidebar.header("🛠️ Diagnostics")
+    
     if st.sidebar.button("Test Telegram Connection 📡"):
         res = send_telegram("🔔 <b>Test Message:</b> Ghost Protocol is Connected! 🚀", is_sticker=False)
         st.sidebar.json(res) 
