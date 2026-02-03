@@ -22,8 +22,10 @@ MAX_DAILY_SIGNALS = 8
 # --- 10 METHODS CONFIG ---
 SCORE_THRESHOLD = 85 
 
-# Leverage Settings
-LEVERAGE_VAL = 50             
+# --- DYNAMIC SETTINGS ---
+MAX_LEVERAGE = 50  
+TARGET_SL_ROI = 60 # Stop Loss එක වදිනකොට Loss එක 60% ක් වෙන්න Target කරනවා
+
 DATA_FILE = "bot_data.json" 
 
 st.set_page_config(page_title="Ghost Protocol Dashboard", page_icon="👻", layout="wide")
@@ -83,22 +85,53 @@ def send_telegram(msg, is_sticker=False):
         return True
     except: return False
 
-def get_data(symbol):
+def get_data(symbol, limit=200):
     try:
         exchange = ccxt.mexc({'options': {'defaultType': 'swap'}})
         exchange.timeout = 10000 
-        bars = exchange.fetch_ohlcv(symbol, timeframe='15m', limit=200)
+        bars = exchange.fetch_ohlcv(symbol, timeframe='15m', limit=limit)
         df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         return df
     except: return pd.DataFrame()
 
-# --- THE 10 METHOD ANALYZER ---
-def analyze_ultimate(df):
-    if df.empty or len(df) < 100: return "NEUTRAL", 50, 0, 0, []
+# --- MARKET SENTIMENT CHECK (SYMMETRICAL) ---
+def get_btc_trend():
+    try:
+        df = get_data("BTC/USDT:USDT", limit=50)
+        if df.empty: return "NEUTRAL"
+        
+        df['ema200'] = ta.ema(df['close'], 200)
+        current_price = df['close'].iloc[-1]
+        
+        # Volatility check (Pump OR Dump)
+        open_price = df['open'].iloc[-1]
+        change_pct = (current_price - open_price) / open_price * 100
+
+        # 1. HUGE DUMP CHECK
+        if change_pct < -2.0: return "CRASH_DUMP" # Block Longs
+        
+        # 2. HUGE PUMP CHECK
+        if change_pct > 2.0: return "MEGA_PUMP" # Block Shorts
+        
+        sma_50 = df['close'].rolling(50).mean().iloc[-1]
+        
+        if current_price < sma_50:
+            return "BEARISH"
+        elif current_price > sma_50:
+            return "BULLISH"
+        return "NEUTRAL"
+    except:
+        return "NEUTRAL"
+
+# --- THE 10 METHOD ANALYZER (PERFECTLY BALANCED) ---
+def analyze_ultimate(df, btc_trend):
+    if df.empty or len(df) < 200: return "NEUTRAL", 50, 0, 0, 0, 0, []
     
+    # Indicators
     df['rsi'] = ta.rsi(df['close'], 14)
     df['sma50'] = ta.sma(df['close'], 50)
+    df['ema200'] = ta.ema(df['close'], 200)
     df['atr'] = ta.atr(df['high'], df['low'], df['close'], 14)
     
     curr = df.iloc[-1]
@@ -109,51 +142,93 @@ def analyze_ultimate(df):
     score = 50
     methods_hit = []
 
-    # 1. RSI
-    if curr['rsi'] < 25: score += 10; methods_hit.append("RSI")
-    elif curr['rsi'] > 75: score -= 10; methods_hit.append("RSI")
+    # --- FUNDAMENTAL / TREND FILTER (SYMMETRICAL) ---
+    
+    # 1. Critical Volatility Protection
+    if btc_trend == "CRASH_DUMP":
+        # Force score down (Only Shorts allowed if any)
+        # We return a modified score logic or simply block Longs
+        pass # Will handle logic below by penalizing Long score heavily
+        
+    elif btc_trend == "MEGA_PUMP":
+        # Force score up (Only Longs allowed if any)
+        pass
 
-    # 2. SMA
-    if curr['close'] > curr['sma50']: score += 10; methods_hit.append("SMA")
-    else: score -= 10; methods_hit.append("SMA")
+    # Trend Direction
+    is_downtrend = curr['close'] < curr['ema200']
+    is_uptrend = curr['close'] > curr['ema200']
 
-    # 3. Fibonacci
+    # 1. RSI (Balanced)
+    if curr['rsi'] < 30: 
+        if is_downtrend: score -= 5 # Don't catch falling knife
+        else: score += 10; methods_hit.append("RSI Oversold")
+    elif curr['rsi'] > 70: 
+        if is_uptrend: score += 5 # Don't short a rocket
+        else: score -= 10; methods_hit.append("RSI Overbought")
+
+    # 2. SMA/Trend (Balanced)
+    if curr['close'] > curr['sma50']: 
+        score += 10; methods_hit.append("SMA Bullish")
+    else: 
+        score -= 10; methods_hit.append("SMA Bearish")
+        
+    # BTC Trend Influence (Balanced)
+    if btc_trend == "BEARISH": score -= 15 
+    elif btc_trend == "BULLISH": score += 15 
+    elif btc_trend == "CRASH_DUMP": score -= 50 # Kill any Long chance
+    elif btc_trend == "MEGA_PUMP": score += 50 # Kill any Short chance
+
+    # 3. Fibonacci (Balanced)
     fib_618 = low_min + (high_max - low_min) * 0.618
+    # Close to 618 support (Buy)
     if abs(curr['close'] - fib_618) / curr['close'] < 0.005:
-        score += 15; methods_hit.append("Fibonacci")
+        score += 15; methods_hit.append("Fibonacci Golden")
 
-    # 4. SMC
-    if curr['close'] > df['high'].iloc[-20:-1].max():
-        score += 15; methods_hit.append("SMC (MSS)")
-    elif curr['close'] < df['low'].iloc[-20:-1].min():
-        score -= 15; methods_hit.append("SMC (MSS)")
+    # 4. SMC (Balanced)
+    local_high = df['high'].iloc[-10:-1].max()
+    local_low = df['low'].iloc[-10:-1].min()
+    
+    if curr['close'] > local_high: score += 15; methods_hit.append("SMC Breakout (Buy)")
+    elif curr['close'] < local_low: score -= 15; methods_hit.append("SMC Breakdown (Sell)")
 
-    # 5. ICT
+    # 5. ICT (Balanced)
+    # Liquidity Grab at Low -> Buy
     if curr['low'] < df['low'].iloc[-10:-1].min() and curr['close'] > curr['open']:
-        score += 15; methods_hit.append("ICT (Liq Grab)")
+        score += 15; methods_hit.append("ICT Liq Grab (Buy)")
+    # Liquidity Grab at High -> Sell (Turtle Soup Short)
+    elif curr['high'] > df['high'].iloc[-10:-1].max() and curr['close'] < curr['open']:
+        score -= 15; methods_hit.append("ICT Liq Grab (Sell)")
 
-    # 6. Elliott Wave
+    # 6. Elliott Wave / Volume (Balanced)
     if curr['close'] > prev['close'] and df['volume'].iloc[-1] > df['volume'].mean():
-        score += 10; methods_hit.append("Elliott Wave")
+        score += 10; methods_hit.append("Vol Pump")
+    elif curr['close'] < prev['close'] and df['volume'].iloc[-1] > df['volume'].mean():
+        score -= 10; methods_hit.append("Vol Dump")
 
-    # 7 & 8. MSNR
+    # 7 & 8. MSNR (Balanced)
     res = df['high'].iloc[-50:].max()
     sup = df['low'].iloc[-50:].min()
-    if abs(curr['close'] - sup) < (curr['atr']): score += 10; methods_hit.append("MSNR")
-    if abs(curr['close'] - res) < (curr['atr']): score -= 10; methods_hit.append("MSNR")
+    if abs(curr['close'] - sup) < (curr['atr']): score += 10; methods_hit.append("Support Bounce")
+    if abs(curr['close'] - res) < (curr['atr']): score -= 10; methods_hit.append("Resistance Reject")
 
     # 9. News
     now_lk = datetime.now(pytz.timezone('Asia/Colombo'))
     if 18 <= now_lk.hour <= 20:
-        methods_hit.append("News Alert ⚠️")
+        methods_hit.append("News Zone ⚠️")
 
     # 10. ATR
-    if curr['atr'] > df['atr'].mean(): score += 5
+    if curr['atr'] > df['atr'].mean(): score += 5 # Volatility bonus (applies to both)
 
+    # --- WICK DETECTION FOR SL ---
+    swing_low = df['low'].iloc[-15:].min()  
+    swing_high = df['high'].iloc[-15:].max() 
+
+    # Final Decision
     sig = "LONG" if score >= SCORE_THRESHOLD else "SHORT" if score <= (100 - SCORE_THRESHOLD) else "NEUTRAL"
-    return sig, score, curr['close'], curr['atr'], methods_hit
+    
+    return sig, score, curr['close'], curr['atr'], swing_low, swing_high, methods_hit
 
-# --- INITIALIZE SESSION STATE ---
+# --- SESSION STATE ---
 saved_data = load_data()
 
 if 'bot_active' not in st.session_state: st.session_state.bot_active = saved_data['bot_active']
@@ -196,6 +271,7 @@ if st.session_state.bot_active:
 st.sidebar.markdown(f"### Status: **:{status_color}[{status_text}]**")
 st.sidebar.caption(f"Time: {START_HOUR}:00 - {END_HOUR}:00")
 st.sidebar.metric("Daily Signals", f"{st.session_state.daily_count} / {MAX_DAILY_SIGNALS}")
+st.sidebar.caption("Leverage: Dynamic (Risk Based)")
 
 if st.session_state.signaled_coins:
     st.sidebar.caption(f"Today's Signals: {', '.join(st.session_state.signaled_coins)}")
@@ -225,11 +301,11 @@ if st.sidebar.button("🗑️ Remove Selected"):
 st.sidebar.markdown("---")
 if st.sidebar.button("📡 Test Telegram"):
     send_telegram("", is_sticker=True); time.sleep(2)
-    test_msg = "💎<b>CRYPTO CAMPUS VIP</b>💎\n\n🌑 <b>ZIL USDT</b>\n\n🟢<b>Long</b>\n\n🚀<b>Isolated</b>\n📈<b>Leverage 50X</b>\n\n💥<b>Entry 0.00425678</b>\n\n✅<b>Take Profit</b>\n\n1️⃣ 0.00431000 (50.0%)\n2️⃣ 0.00435000 (100.0%)\n\n⭕ <b>Stop Loss 0.00419000 (50.0%)</b>\n\n📝 <b>RR 1:2.8</b>\n\n⚠️ <b>Margin Use 1%-5%(Trading Plan Use)</b>"
+    test_msg = f"💎<b>CRYPTO CAMPUS VIP</b>💎\n\n🌑 <b>BTC USDT</b>\n\n🟢<b>Long</b>\n\n🚀<b>Isolated</b>\n📈<b>Leverage 25X</b>\n\n💥<b>Entry 95000.00</b>\n\n✅<b>Take Profit</b>\n\n1️⃣ 96000.00 (26.3%)\n2️⃣ 97000.00 (52.6%)\n\n⭕ <b>Stop Loss 94000.00 (60.0%)</b>\n\n📝 <b>RR 1:2.0</b>\n\n⚠️ <b>Margin Use 1%-5%(Trading Plan Use)</b>"
     send_telegram(test_msg); st.sidebar.success("Test Sent!")
 
 st.title("👻 GHOST PROTOCOL : ULTIMATE EDITION")
-st.write("Methods Active: **RSI, SMA, ATR, SMC, ICT, Elliott Wave, Fibonacci, MSNR, CRT, News**")
+st.write("Methods Active: **Trend Filter (EMA), BTC Sentiment, RSI, SMA, SMC, ICT, MSNR**")
 st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
 
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
@@ -237,6 +313,9 @@ tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
 def run_scan():
     if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
         st.warning("⚠️ Daily Signal Limit Reached."); return
+
+    btc_trend = get_btc_trend()
+    st.info(f"🧬 Market Sentiment (BTC): **{btc_trend}**")
 
     st.markdown(f"### 🔄 Scanning {len(coins_list)} Coins...")
     progress_bar = st.progress(0); status_area = st.empty()
@@ -248,35 +327,56 @@ def run_scan():
         try:
             df = get_data(f"{coin}/USDT:USDT")
             if not df.empty:
-                sig, score, price, atr, methods = analyze_ultimate(df)
-                status_area.markdown(f"👀 **Checking:** `{coin}` | 📊 **Score:** `{score}/100`")
+                sig, score, price, atr, swing_low, swing_high, methods = analyze_ultimate(df, btc_trend)
+                status_area.markdown(f"👀 **Checking:** `{coin}` | 📊 **Score:** `{score}/100` | 📉 **Trend:** `{btc_trend}`")
                 time.sleep(0.1)
 
                 if sig != "NEUTRAL":
                     if st.session_state.daily_count < MAX_DAILY_SIGNALS:
                         send_telegram("", is_sticker=True); time.sleep(15)
                         
-                        sl_dist = atr * 0.7 
-                        tp_dist = sl_dist * 2.0  
-                        
+                        # --- DYNAMIC LEVERAGE CALCULATION ---
                         if sig == "LONG":
-                            sl = price - sl_dist
+                            # Stop Loss BELOW Swing Low
+                            raw_sl = swing_low - (atr * 0.1)
+                            if (price - raw_sl) / price < 0.005: raw_sl = price - (atr * 1.5)
+                            dist_percent = (price - raw_sl) / price
+                        
+                        else: # SHORT
+                            # Stop Loss ABOVE Swing High
+                            raw_sl = swing_high + (atr * 0.1)
+                            if (raw_sl - price) / price < 0.005: raw_sl = price + (atr * 1.5)
+                            dist_percent = (raw_sl - price) / price
+                        
+                        # Leverage Calculation (Target 60% ROI Loss)
+                        if dist_percent > 0: ideal_leverage = int(TARGET_SL_ROI / (dist_percent * 100))
+                        else: ideal_leverage = 20
+                        
+                        dynamic_leverage = max(5, min(ideal_leverage, MAX_LEVERAGE))
+                        
+                        # Final Numbers
+                        if sig == "LONG":
+                            sl = raw_sl
+                            dist = price - sl
+                            tp_dist = dist * 2.0
                             tps = [price + (tp_dist * x * 0.6) for x in range(1, 5)] 
                             emoji_circle = "🟢"; direction_txt = "Long"
                         else:
-                            sl = price + sl_dist
+                            sl = raw_sl
+                            dist = sl - price
+                            tp_dist = dist * 2.0
                             tps = [price - (tp_dist * x * 0.6) for x in range(1, 5)]
                             emoji_circle = "🔴"; direction_txt = "Short"
                         
                         rr = round(abs(tps[3]-price)/abs(price-sl), 2)
-                        roi_1 = round(abs(tps[0]-price)/price*100*LEVERAGE_VAL, 1)
-                        roi_2 = round(abs(tps[1]-price)/price*100*LEVERAGE_VAL, 1)
-                        roi_3 = round(abs(tps[2]-price)/price*100*LEVERAGE_VAL, 1)
-                        roi_4 = round(abs(tps[3]-price)/price*100*LEVERAGE_VAL, 1)
-                        sl_roi = round(abs(price-sl)/price*100*LEVERAGE_VAL, 1)
+                        
+                        roi_1 = round(abs(tps[0]-price)/price*100*dynamic_leverage, 1)
+                        roi_2 = round(abs(tps[1]-price)/price*100*dynamic_leverage, 1)
+                        roi_3 = round(abs(tps[2]-price)/price*100*dynamic_leverage, 1)
+                        roi_4 = round(abs(tps[3]-price)/price*100*dynamic_leverage, 1)
+                        sl_roi = round(abs(price-sl)/price*100*dynamic_leverage, 1)
+                        
                         methods_str = ", ".join(methods)
-
-                        # --- SMART FORMATTING FOR PRICE ---
                         p_fmt = ".8f" if price < 1 else ".2f"
 
                         msg = (
@@ -284,7 +384,7 @@ def run_scan():
                             f"🌑 <b>{coin} USDT</b>\n\n"
                             f"{emoji_circle}<b>{direction_txt}</b>\n\n"
                             f"🚀<b>Isolated</b>\n"
-                            f"📈<b>Leverage 50X</b>\n\n"
+                            f"📈<b>Leverage {dynamic_leverage}X</b>\n\n"
                             f"💥<b>Entry {price:{p_fmt}}</b>\n\n"
                             f"✅<b>Take Profit</b>\n\n"
                             f"1️⃣ {tps[0]:{p_fmt}} ({roi_1}%)\n"
