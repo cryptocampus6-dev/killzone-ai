@@ -39,7 +39,9 @@ def load_data():
         "last_reset_date": datetime.now(lz).strftime("%Y-%m-%d"),
         "signaled_coins": [],
         "history": [],
-        "last_scan_block_id": -1
+        "last_scan_block_id": -1,
+        "sent_morning": False,  # උදේ මැසේජ් එක යැව්වද කියල බලන්න
+        "sent_goodbye": False   # රෑ/ලිමිට් මැසේජ් එක යැව්වද කියල බලන්න
     }
     
     if os.path.exists(DATA_FILE):
@@ -51,6 +53,8 @@ def load_data():
                     data["daily_count"] = 0
                     data["signaled_coins"] = []
                     data["last_reset_date"] = today_str
+                    data["sent_morning"] = False # දවස මාරු උනාම රීසෙට්
+                    data["sent_goodbye"] = False # දවස මාරු උනාම රීසෙට්
                 return data
         except:
             return default_data
@@ -69,7 +73,9 @@ def save_full_state():
         "last_reset_date": st.session_state.last_reset_date,
         "signaled_coins": st.session_state.signaled_coins,
         "history": st.session_state.history,
-        "last_scan_block_id": st.session_state.last_scan_block_id
+        "last_scan_block_id": st.session_state.last_scan_block_id,
+        "sent_morning": st.session_state.sent_morning,
+        "sent_goodbye": st.session_state.sent_goodbye
     }
     with open(DATA_FILE, "w") as f:
         json.dump(data_to_save, f)
@@ -237,6 +243,10 @@ if 'last_reset_date' not in st.session_state: st.session_state.last_reset_date =
 if 'signaled_coins' not in st.session_state: st.session_state.signaled_coins = saved_data['signaled_coins']
 if 'history' not in st.session_state: st.session_state.history = saved_data['history']
 if 'last_scan_block_id' not in st.session_state: st.session_state.last_scan_block_id = saved_data['last_scan_block_id']
+# අලුත් මැසේජ් මතක තබා ගැනීම
+if 'sent_morning' not in st.session_state: st.session_state.sent_morning = saved_data['sent_morning']
+if 'sent_goodbye' not in st.session_state: st.session_state.sent_goodbye = saved_data['sent_goodbye']
+
 if 'coins' not in st.session_state:
     st.session_state.coins = [
         "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "AVAX", "DOT", "LINK", "TRX",
@@ -311,7 +321,13 @@ st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
 
 def run_scan():
+    # --- CHECK DAILY LIMIT & SEND GOODBYE MSG ---
     if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
+        # ලිමිට් එක ගැහුවොත් Good Bye මැසේජ් එක යවන්න (කලින් යැව්වෙ නැත්නම් විතරක්)
+        if not st.session_state.sent_goodbye:
+            send_telegram("🚀 Good Bye Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋")
+            st.session_state.sent_goodbye = True
+            save_full_state()
         st.warning("⚠️ Daily Signal Limit Reached."); return
 
     btc_trend = get_btc_trend()
@@ -348,13 +364,11 @@ def run_scan():
                             if (raw_sl - price) / price < 0.005: raw_sl = price + (atr * 1.5)
                             dist_percent = (raw_sl - price) / price
                         
-                        # Leverage Calculation (Target 60% ROI Loss)
                         if dist_percent > 0: ideal_leverage = int(TARGET_SL_ROI / (dist_percent * 100))
                         else: ideal_leverage = 20
                         
                         dynamic_leverage = max(5, min(ideal_leverage, MAX_LEVERAGE))
                         
-                        # Final Numbers
                         if sig == "LONG":
                             sl = raw_sl
                             dist = price - sl
@@ -401,6 +415,15 @@ def run_scan():
                         st.session_state.daily_count += 1
                         st.session_state.signaled_coins.append(coin)
                         save_full_state()
+                        
+                        # --- CHECK LIMIT IMMEDIATELY AFTER SIGNAL ---
+                        if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
+                            if not st.session_state.sent_goodbye:
+                                send_telegram("🚀 Good Bye Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋")
+                                st.session_state.sent_goodbye = True
+                                save_full_state()
+                            break
+
         except: pass
         progress_bar.progress((i + 1) / len(coins_list))
     
@@ -408,8 +431,22 @@ def run_scan():
 
 with tab1:
     if st.session_state.bot_active:
+        
+        # --- MORNING GREETING (07:00) ---
+        if is_within_hours and not st.session_state.sent_morning:
+            send_telegram("☀️ Good Morning Traders! ඔයාලා හැමෝටම ජයග්‍රාහී සුබ දවසක් වේවා! 🚀")
+            st.session_state.sent_morning = True
+            save_full_state()
+
+        # --- GOODBYE CHECK (TIME BASED - 21:00) ---
+        if current_time.hour >= END_HOUR and not st.session_state.sent_goodbye:
+            send_telegram("🚀 Good Bye Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋")
+            st.session_state.sent_goodbye = True
+            save_full_state()
+
         if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
             st.warning("🛑 Daily Limit Reached. Sleeping..."); time.sleep(60); st.rerun()
+        
         elif is_within_hours:
             current_block_id = current_time.hour * 4 + (current_time.minute // 15)
             is_start_of_block = (current_time.minute % 15) <= 5 
