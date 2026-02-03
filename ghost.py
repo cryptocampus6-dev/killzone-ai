@@ -40,8 +40,8 @@ def load_data():
         "signaled_coins": [],
         "history": [],
         "last_scan_block_id": -1,
-        "sent_morning": False,  # උදේ මැසේජ් එක යැව්වද කියල බලන්න
-        "sent_goodbye": False   # රෑ/ලිමිට් මැසේජ් එක යැව්වද කියල බලන්න
+        "sent_morning": False,
+        "sent_goodbye": False
     }
     
     if os.path.exists(DATA_FILE):
@@ -49,12 +49,20 @@ def load_data():
             with open(DATA_FILE, "r") as f:
                 data = json.load(f)
                 today_str = datetime.now(lz).strftime("%Y-%m-%d")
+                
+                # දිනය මාරු වුනානම් Reset කිරීම
                 if data.get("last_reset_date") != today_str:
                     data["daily_count"] = 0
                     data["signaled_coins"] = []
                     data["last_reset_date"] = today_str
-                    data["sent_morning"] = False # දවස මාරු උනාම රීසෙට්
-                    data["sent_goodbye"] = False # දවස මාරු උනාම රීසෙට්
+                    data["sent_morning"] = False
+                    data["sent_goodbye"] = False
+                
+                # --- KEY ERROR FIX (Auto Repair) ---
+                # පරණ ෆයිල් වල මේවා නැත්නම් අලුතින් එකතු කරනවා
+                if "sent_morning" not in data: data["sent_morning"] = False
+                if "sent_goodbye" not in data: data["sent_goodbye"] = False
+                
                 return data
         except:
             return default_data
@@ -152,12 +160,9 @@ def analyze_ultimate(df, btc_trend):
     
     # 1. Critical Volatility Protection
     if btc_trend == "CRASH_DUMP":
-        # Force score down (Only Shorts allowed if any)
-        # We return a modified score logic or simply block Longs
-        pass # Will handle logic below by penalizing Long score heavily
+        pass 
         
     elif btc_trend == "MEGA_PUMP":
-        # Force score up (Only Longs allowed if any)
         pass
 
     # Trend Direction
@@ -417,6 +422,7 @@ def run_scan():
                         save_full_state()
                         
                         # --- CHECK LIMIT IMMEDIATELY AFTER SIGNAL ---
+                        # සිග්නල් එකක් දීපු ගමන් ලිමිට් එක පැනලද බලනවා. පැන්නා නම් ගුඩ් බයි කියනවා.
                         if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
                             if not st.session_state.sent_goodbye:
                                 send_telegram("🚀 Good Bye Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋")
@@ -439,6 +445,7 @@ with tab1:
             save_full_state()
 
         # --- GOODBYE CHECK (TIME BASED - 21:00) ---
+        # වෙලාව 9 පහුනම් සහ තවම ගුඩ් බයි කියලා නැත්නම් කියන්න
         if current_time.hour >= END_HOUR and not st.session_state.sent_goodbye:
             send_telegram("🚀 Good Bye Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋")
             st.session_state.sent_goodbye = True
