@@ -24,7 +24,7 @@ SCORE_THRESHOLD = 85
 
 # --- DYNAMIC SETTINGS ---
 MAX_LEVERAGE = 50  
-TARGET_SL_ROI = 60 
+TARGET_SL_ROI = 60 # Stop Loss එක වදිනකොට Loss එක 60% ක් වෙන්න Target කරනවා
 
 DATA_FILE = "bot_data.json" 
 
@@ -39,9 +39,7 @@ def load_data():
         "last_reset_date": datetime.now(lz).strftime("%Y-%m-%d"),
         "signaled_coins": [],
         "history": [],
-        "last_scan_block_id": -1,
-        "sent_morning": False,
-        "sent_night": False
+        "last_scan_block_id": -1
     }
     
     if os.path.exists(DATA_FILE):
@@ -53,8 +51,6 @@ def load_data():
                     data["daily_count"] = 0
                     data["signaled_coins"] = []
                     data["last_reset_date"] = today_str
-                    data["sent_morning"] = False
-                    data["sent_night"] = False
                 return data
         except:
             return default_data
@@ -73,9 +69,7 @@ def save_full_state():
         "last_reset_date": st.session_state.last_reset_date,
         "signaled_coins": st.session_state.signaled_coins,
         "history": st.session_state.history,
-        "last_scan_block_id": st.session_state.last_scan_block_id,
-        "sent_morning": st.session_state.sent_morning,
-        "sent_night": st.session_state.sent_night
+        "last_scan_block_id": st.session_state.last_scan_block_id
     }
     with open(DATA_FILE, "w") as f:
         json.dump(data_to_save, f)
@@ -101,7 +95,7 @@ def get_data(symbol, limit=200):
         return df
     except: return pd.DataFrame()
 
-# --- MARKET SENTIMENT CHECK ---
+# --- MARKET SENTIMENT CHECK (SYMMETRICAL) ---
 def get_btc_trend():
     try:
         df = get_data("BTC/USDT:USDT", limit=50)
@@ -110,24 +104,31 @@ def get_btc_trend():
         df['ema200'] = ta.ema(df['close'], 200)
         current_price = df['close'].iloc[-1]
         
+        # Volatility check (Pump OR Dump)
         open_price = df['open'].iloc[-1]
         change_pct = (current_price - open_price) / open_price * 100
 
-        if change_pct < -2.0: return "CRASH_DUMP" 
-        if change_pct > 2.0: return "MEGA_PUMP" 
+        # 1. HUGE DUMP CHECK
+        if change_pct < -2.0: return "CRASH_DUMP" # Block Longs
+        
+        # 2. HUGE PUMP CHECK
+        if change_pct > 2.0: return "MEGA_PUMP" # Block Shorts
         
         sma_50 = df['close'].rolling(50).mean().iloc[-1]
         
-        if current_price < sma_50: return "BEARISH"
-        elif current_price > sma_50: return "BULLISH"
+        if current_price < sma_50:
+            return "BEARISH"
+        elif current_price > sma_50:
+            return "BULLISH"
         return "NEUTRAL"
     except:
         return "NEUTRAL"
 
-# --- THE 10 METHOD ANALYZER ---
+# --- THE 10 METHOD ANALYZER (PERFECTLY BALANCED) ---
 def analyze_ultimate(df, btc_trend):
     if df.empty or len(df) < 200: return "NEUTRAL", 50, 0, 0, 0, 0, []
     
+    # Indicators
     df['rsi'] = ta.rsi(df['close'], 14)
     df['sma50'] = ta.sma(df['close'], 50)
     df['ema200'] = ta.ema(df['close'], 200)
@@ -141,55 +142,70 @@ def analyze_ultimate(df, btc_trend):
     score = 50
     methods_hit = []
 
-    # Symmetrical Filter
-    if btc_trend == "CRASH_DUMP": pass 
-    elif btc_trend == "MEGA_PUMP": pass
+    # --- FUNDAMENTAL / TREND FILTER (SYMMETRICAL) ---
+    
+    # 1. Critical Volatility Protection
+    if btc_trend == "CRASH_DUMP":
+        # Force score down (Only Shorts allowed if any)
+        # We return a modified score logic or simply block Longs
+        pass # Will handle logic below by penalizing Long score heavily
+        
+    elif btc_trend == "MEGA_PUMP":
+        # Force score up (Only Longs allowed if any)
+        pass
 
+    # Trend Direction
     is_downtrend = curr['close'] < curr['ema200']
     is_uptrend = curr['close'] > curr['ema200']
 
-    # 1. RSI
+    # 1. RSI (Balanced)
     if curr['rsi'] < 30: 
-        if is_downtrend: score -= 5 
+        if is_downtrend: score -= 5 # Don't catch falling knife
         else: score += 10; methods_hit.append("RSI Oversold")
     elif curr['rsi'] > 70: 
-        if is_uptrend: score += 5 
+        if is_uptrend: score += 5 # Don't short a rocket
         else: score -= 10; methods_hit.append("RSI Overbought")
 
-    # 2. SMA
-    if curr['close'] > curr['sma50']: score += 10; methods_hit.append("SMA Bullish")
-    else: score -= 10; methods_hit.append("SMA Bearish")
+    # 2. SMA/Trend (Balanced)
+    if curr['close'] > curr['sma50']: 
+        score += 10; methods_hit.append("SMA Bullish")
+    else: 
+        score -= 10; methods_hit.append("SMA Bearish")
         
-    # BTC Trend
+    # BTC Trend Influence (Balanced)
     if btc_trend == "BEARISH": score -= 15 
     elif btc_trend == "BULLISH": score += 15 
-    elif btc_trend == "CRASH_DUMP": score -= 50 
-    elif btc_trend == "MEGA_PUMP": score += 50 
+    elif btc_trend == "CRASH_DUMP": score -= 50 # Kill any Long chance
+    elif btc_trend == "MEGA_PUMP": score += 50 # Kill any Short chance
 
-    # 3. Fibonacci
+    # 3. Fibonacci (Balanced)
     fib_618 = low_min + (high_max - low_min) * 0.618
+    # Close to 618 support (Buy)
     if abs(curr['close'] - fib_618) / curr['close'] < 0.005:
         score += 15; methods_hit.append("Fibonacci Golden")
 
-    # 4. SMC
+    # 4. SMC (Balanced)
     local_high = df['high'].iloc[-10:-1].max()
     local_low = df['low'].iloc[-10:-1].min()
+    
     if curr['close'] > local_high: score += 15; methods_hit.append("SMC Breakout (Buy)")
     elif curr['close'] < local_low: score -= 15; methods_hit.append("SMC Breakdown (Sell)")
 
-    # 5. ICT
+    # 5. ICT (Balanced)
+    # Liquidity Grab at Low -> Buy
     if curr['low'] < df['low'].iloc[-10:-1].min() and curr['close'] > curr['open']:
         score += 15; methods_hit.append("ICT Liq Grab (Buy)")
+    # Liquidity Grab at High -> Sell (Turtle Soup Short)
     elif curr['high'] > df['high'].iloc[-10:-1].max() and curr['close'] < curr['open']:
         score -= 15; methods_hit.append("ICT Liq Grab (Sell)")
 
-    # 6. Elliott Wave
+    # 6. Elliott Wave / Volume (Balanced)
     if curr['close'] > prev['close'] and df['volume'].iloc[-1] > df['volume'].mean():
         score += 10; methods_hit.append("Vol Pump")
     elif curr['close'] < prev['close'] and df['volume'].iloc[-1] > df['volume'].mean():
         score -= 10; methods_hit.append("Vol Dump")
 
-    # 7 & 8. MSNR
+    # 7 & 8. MSNR (Balanced)
     res = df['high'].iloc[-50:].max()
     sup = df['low'].iloc[-50:].min()
     if abs(curr['close'] - sup) < (curr['atr']): score += 10; methods_hit.append("Support Bounce")
@@ -201,13 +217,15 @@ def analyze_ultimate(df, btc_trend):
         methods_hit.append("News Zone ⚠️")
 
     # 10. ATR
-    if curr['atr'] > df['atr'].mean(): score += 5 
+    if curr['atr'] > df['atr'].mean(): score += 5 # Volatility bonus (applies to both)
 
-    # WICK DETECTION
+    # --- WICK DETECTION FOR SL ---
     swing_low = df['low'].iloc[-15:].min()  
     swing_high = df['high'].iloc[-15:].max() 
 
+    # Final Decision
     sig = "LONG" if score >= SCORE_THRESHOLD else "SHORT" if score <= (100 - SCORE_THRESHOLD) else "NEUTRAL"
+    
     return sig, score, curr['close'], curr['atr'], swing_low, swing_high, methods_hit
 
 # --- SESSION STATE ---
@@ -219,9 +237,6 @@ if 'last_reset_date' not in st.session_state: st.session_state.last_reset_date =
 if 'signaled_coins' not in st.session_state: st.session_state.signaled_coins = saved_data['signaled_coins']
 if 'history' not in st.session_state: st.session_state.history = saved_data['history']
 if 'last_scan_block_id' not in st.session_state: st.session_state.last_scan_block_id = saved_data['last_scan_block_id']
-if 'sent_morning' not in st.session_state: st.session_state.sent_morning = saved_data['sent_morning']
-if 'sent_night' not in st.session_state: st.session_state.sent_night = saved_data['sent_night']
-
 if 'coins' not in st.session_state:
     st.session_state.coins = [
         "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "AVAX", "DOT", "LINK", "TRX",
@@ -296,12 +311,7 @@ st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
 
 def run_scan():
-    # --- CHECK DAILY LIMIT & SEND GOODBYE MSG ---
     if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
-        if not st.session_state.sent_night:
-            send_telegram(f"🛑 <b>Daily Target Reached ({MAX_DAILY_SIGNALS}/{MAX_DAILY_SIGNALS})</b>\n\n<b>Good Bye Traders!</b> 👋\n\nඅදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 💤")
-            st.session_state.sent_night = True
-            save_full_state()
         st.warning("⚠️ Daily Signal Limit Reached."); return
 
     btc_trend = get_btc_trend()
@@ -327,20 +337,24 @@ def run_scan():
                         
                         # --- DYNAMIC LEVERAGE CALCULATION ---
                         if sig == "LONG":
+                            # Stop Loss BELOW Swing Low
                             raw_sl = swing_low - (atr * 0.1)
                             if (price - raw_sl) / price < 0.005: raw_sl = price - (atr * 1.5)
                             dist_percent = (price - raw_sl) / price
                         
                         else: # SHORT
+                            # Stop Loss ABOVE Swing High
                             raw_sl = swing_high + (atr * 0.1)
                             if (raw_sl - price) / price < 0.005: raw_sl = price + (atr * 1.5)
                             dist_percent = (raw_sl - price) / price
                         
+                        # Leverage Calculation (Target 60% ROI Loss)
                         if dist_percent > 0: ideal_leverage = int(TARGET_SL_ROI / (dist_percent * 100))
                         else: ideal_leverage = 20
                         
                         dynamic_leverage = max(5, min(ideal_leverage, MAX_LEVERAGE))
                         
+                        # Final Numbers
                         if sig == "LONG":
                             sl = raw_sl
                             dist = price - sl
@@ -355,6 +369,7 @@ def run_scan():
                             emoji_circle = "🔴"; direction_txt = "Short"
                         
                         rr = round(abs(tps[3]-price)/abs(price-sl), 2)
+                        
                         roi_1 = round(abs(tps[0]-price)/price*100*dynamic_leverage, 1)
                         roi_2 = round(abs(tps[1]-price)/price*100*dynamic_leverage, 1)
                         roi_3 = round(abs(tps[2]-price)/price*100*dynamic_leverage, 1)
@@ -386,15 +401,6 @@ def run_scan():
                         st.session_state.daily_count += 1
                         st.session_state.signaled_coins.append(coin)
                         save_full_state()
-                        
-                        # --- CHECK LIMIT IMMEDIATELY AFTER SIGNAL ---
-                        if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
-                            if not st.session_state.sent_night:
-                                send_telegram(f"🛑 <b>Daily Target Reached ({MAX_DAILY_SIGNALS}/{MAX_DAILY_SIGNALS})</b>\n\n<b>Good Bye Traders!</b> 👋\n\nඅදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 💤")
-                                st.session_state.sent_night = True
-                                save_full_state()
-                            break
-
         except: pass
         progress_bar.progress((i + 1) / len(coins_list))
     
@@ -402,22 +408,8 @@ def run_scan():
 
 with tab1:
     if st.session_state.bot_active:
-        
-        # --- MORNING GREETING (07:00) ---
-        if is_within_hours and not st.session_state.sent_morning:
-            send_telegram("☀️ <b>Good Morning Traders!</b>\n\nඔයාලා හැමෝටම ජයග්‍රාහී සුබ දවසක් වේවා! 🚀")
-            st.session_state.sent_morning = True
-            save_full_state()
-
-        # --- NIGHT GREETING (TIME BASED - 21:00) ---
-        if current_time.hour >= END_HOUR and not st.session_state.sent_night:
-            send_telegram("🌙 <b>Good Bye Traders!</b> 👋\n\nඅද දවස ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 💤")
-            st.session_state.sent_night = True
-            save_full_state()
-
         if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
             st.warning("🛑 Daily Limit Reached. Sleeping..."); time.sleep(60); st.rerun()
-        
         elif is_within_hours:
             current_block_id = current_time.hour * 4 + (current_time.minute // 15)
             is_start_of_block = (current_time.minute % 15) <= 5 
