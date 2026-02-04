@@ -96,23 +96,19 @@ def send_telegram(msg, is_sticker=False):
         return True
     except: return False
 
-# --- OPTIMIZED EXCHANGE CONNECTION ---
-@st.cache_resource
-def get_exchange():
-    return ccxt.mexc({
-        'options': {'defaultType': 'swap'},
-        'enableRateLimit': True  # FIX: Prevents getting blocked by MEXC
-    })
-
+# --- ROBUST DATA FETCHING ---
 def get_data(symbol, limit=200, timeframe='15m'):
-    exchange = get_exchange()
     try:
+        # Reverted to simple instance creation to avoid caching issues
+        exchange = ccxt.mexc({'options': {'defaultType': 'swap'}})
+        exchange.timeout = 15000 # Increased timeout
+        
         bars = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
         df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         return df
-    except: 
-        return pd.DataFrame()
+    except Exception as e:
+        return pd.DataFrame() # Return empty on error
 
 # --- METHOD 13: TIME ANALYSIS (SESSION KILLZONES) ---
 def get_time_analysis():
@@ -136,7 +132,6 @@ def analyze_ultimate(df, coin_name):
     
     # --- SAFETY 1: FETCH HIGHER TIMEFRAMES ---
     try:
-        # Fetching higher timeframes might fail due to rate limits, handle gracefully
         df_4h = get_data(f"{coin_name}/USDT:USDT", limit=50, timeframe='4h')
         if not df_4h.empty:
             df_4h['ema200'] = ta.ema(df_4h['close'], 200)
@@ -365,21 +360,22 @@ def run_scan():
         try:
             status_area.markdown(f"👀 **Checking:** `{coin}` ...")
             
+            # --- ROBUST DATA LOADING ---
             df = get_data(f"{coin}/USDT:USDT")
             
             if df.empty:
-                # FIX: Show error if data fetching failed
-                status_area.markdown(f"⚠️ **Error:** `{coin}` | ❌ No Data (Retrying...)")
-                time.sleep(0.5)
-                continue # Skip to next coin
+                # ERROR VISIBILITY FIX: Show specific error on screen
+                status_area.markdown(f"⚠️ **Error:** `{coin}` (Failed to Fetch Data)")
+                time.sleep(1) # FORCE DELAY (so you see the error)
+                continue 
 
             sig, score, price, atr, sl_long, sl_short, methods = analyze_ultimate(df, coin)
             
             score_color = "green" if score > 80 else "orange" if score > 50 else "red"
             
-            # Show Score
+            # SUCCESS VISIBILITY FIX
             status_area.markdown(f"👀 **Checked:** `{coin}` | 📊 **Score:** :{score_color}[`{score}/100`]")
-            time.sleep(0.5) 
+            time.sleep(1) # FORCE DELAY (so you see the score)
 
             if sig != "NEUTRAL":
                 if st.session_state.daily_count < MAX_DAILY_SIGNALS:
@@ -451,8 +447,12 @@ def run_scan():
                             st.session_state.sent_goodbye = True
                             save_full_state()
                         break
-
-        except: pass
+        
+        except Exception as e:
+            # GLOBAL ERROR CATCHER
+            status_area.markdown(f"⚠️ **Error:** `{coin}` - {str(e)}")
+            time.sleep(1) # FORCE DELAY ON ERROR
+        
         progress_bar.progress((i + 1) / len(coins_list))
     
     status_area.empty(); st.success("Scan Complete!"); return
