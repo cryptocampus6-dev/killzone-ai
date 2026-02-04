@@ -354,16 +354,19 @@ def run_scan():
             progress_bar.progress((i + 1) / len(coins_list)); continue
 
         try:
-            # FIX: Show "Checking" BEFORE fetching data to be responsive
+            # FIX: මුලින්ම Checking කියලා පෙන්නනවා
             status_area.markdown(f"👀 **Checking:** `{coin}` ...")
             
             df = get_data(f"{coin}/USDT:USDT")
             if not df.empty:
                 sig, score, price, atr, sl_long, sl_short, methods = analyze_ultimate(df, coin)
                 
-                # FIX: Show "Score" AFTER analysis
-                status_area.markdown(f"👀 **Checked:** `{coin}` | 📊 **Score:** `{score}/100`")
-                time.sleep(0.05) # Small delay to make it visible
+                # Colors for score
+                score_color = "green" if score > 80 else "orange" if score > 50 else "red"
+                
+                # FIX: ඊට පස්සේ Score එක පෙන්නනවා (තත්පර 0.5ක් තියෙනවා)
+                status_area.markdown(f"👀 **Checked:** `{coin}` | 📊 **Score:** :{score_color}[`{score}/100`]")
+                time.sleep(0.5) # VISIBLE DELAY (ඇහැට පේන විදියට හෙමින්)
 
                 if sig != "NEUTRAL":
                     if st.session_state.daily_count < MAX_DAILY_SIGNALS:
