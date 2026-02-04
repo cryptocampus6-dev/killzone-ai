@@ -96,15 +96,23 @@ def send_telegram(msg, is_sticker=False):
         return True
     except: return False
 
+# --- OPTIMIZED EXCHANGE CONNECTION ---
+@st.cache_resource
+def get_exchange():
+    return ccxt.mexc({
+        'options': {'defaultType': 'swap'},
+        'enableRateLimit': True  # FIX: Prevents getting blocked by MEXC
+    })
+
 def get_data(symbol, limit=200, timeframe='15m'):
+    exchange = get_exchange()
     try:
-        exchange = ccxt.mexc({'options': {'defaultType': 'swap'}})
-        exchange.timeout = 10000 
         bars = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
         df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         return df
-    except: return pd.DataFrame()
+    except: 
+        return pd.DataFrame()
 
 # --- METHOD 13: TIME ANALYSIS (SESSION KILLZONES) ---
 def get_time_analysis():
@@ -128,6 +136,7 @@ def analyze_ultimate(df, coin_name):
     
     # --- SAFETY 1: FETCH HIGHER TIMEFRAMES ---
     try:
+        # Fetching higher timeframes might fail due to rate limits, handle gracefully
         df_4h = get_data(f"{coin_name}/USDT:USDT", limit=50, timeframe='4h')
         if not df_4h.empty:
             df_4h['ema200'] = ta.ema(df_4h['close'], 200)
@@ -354,90 +363,94 @@ def run_scan():
             progress_bar.progress((i + 1) / len(coins_list)); continue
 
         try:
-            # FIX: මුලින්ම Checking කියලා පෙන්නනවා
             status_area.markdown(f"👀 **Checking:** `{coin}` ...")
             
             df = get_data(f"{coin}/USDT:USDT")
-            if not df.empty:
-                sig, score, price, atr, sl_long, sl_short, methods = analyze_ultimate(df, coin)
-                
-                # Colors for score
-                score_color = "green" if score > 80 else "orange" if score > 50 else "red"
-                
-                # FIX: ඊට පස්සේ Score එක පෙන්නනවා (තත්පර 0.5ක් තියෙනවා)
-                status_area.markdown(f"👀 **Checked:** `{coin}` | 📊 **Score:** :{score_color}[`{score}/100`]")
-                time.sleep(0.5) # VISIBLE DELAY (ඇහැට පේන විදියට හෙමින්)
+            
+            if df.empty:
+                # FIX: Show error if data fetching failed
+                status_area.markdown(f"⚠️ **Error:** `{coin}` | ❌ No Data (Retrying...)")
+                time.sleep(0.5)
+                continue # Skip to next coin
 
-                if sig != "NEUTRAL":
-                    if st.session_state.daily_count < MAX_DAILY_SIGNALS:
-                        send_telegram("", is_sticker=True); time.sleep(15)
-                        
-                        if sig == "LONG":
-                            sl = sl_long 
-                            if (price - sl) / price < 0.005: sl = price - (atr * 1.5)
-                            dist_percent = (price - sl) / price
-                        
-                        else: # SHORT
-                            sl = sl_short 
-                            if (sl - price) / price < 0.005: sl = price + (atr * 1.5)
-                            dist_percent = (sl - price) / price
-                        
-                        if dist_percent > 0: ideal_leverage = int(TARGET_SL_ROI / (dist_percent * 100))
-                        else: ideal_leverage = 20
-                        
-                        dynamic_leverage = max(5, min(ideal_leverage, MAX_LEVERAGE))
-                        
-                        if sig == "LONG":
-                            dist = price - sl
-                            tp_dist = dist * 2.0
-                            tps = [price + (tp_dist * x * 0.6) for x in range(1, 5)] 
-                            emoji_circle = "🟢"; direction_txt = "Long"
-                        else:
-                            dist = sl - price
-                            tp_dist = dist * 2.0
-                            tps = [price - (tp_dist * x * 0.6) for x in range(1, 5)]
-                            emoji_circle = "🔴"; direction_txt = "Short"
-                        
-                        rr = round(abs(tps[3]-price)/abs(price-sl), 2)
-                        
-                        roi_1 = round(abs(tps[0]-price)/price*100*dynamic_leverage, 1)
-                        roi_2 = round(abs(tps[1]-price)/price*100*dynamic_leverage, 1)
-                        roi_3 = round(abs(tps[2]-price)/price*100*dynamic_leverage, 1)
-                        roi_4 = round(abs(tps[3]-price)/price*100*dynamic_leverage, 1)
-                        sl_roi = round(abs(price-sl)/price*100*dynamic_leverage, 1)
-                        
-                        methods_str = ", ".join(methods)
-                        p_fmt = ".8f" if price < 1 else ".2f"
+            sig, score, price, atr, sl_long, sl_short, methods = analyze_ultimate(df, coin)
+            
+            score_color = "green" if score > 80 else "orange" if score > 50 else "red"
+            
+            # Show Score
+            status_area.markdown(f"👀 **Checked:** `{coin}` | 📊 **Score:** :{score_color}[`{score}/100`]")
+            time.sleep(0.5) 
 
-                        msg = (
-                            f"💎<b>CRYPTO CAMPUS VIP</b>💎\n\n"
-                            f"🌑 <b>{coin} USDT</b>\n\n"
-                            f"{emoji_circle}<b>{direction_txt}</b>\n\n"
-                            f"🚀<b>Isolated</b>\n"
-                            f"📈<b>Leverage {dynamic_leverage}X</b>\n\n"
-                            f"💥<b>Entry {price:{p_fmt}}</b>\n\n"
-                            f"✅<b>Take Profit</b>\n\n"
-                            f"1️⃣ {tps[0]:{p_fmt}} ({roi_1}%)\n"
-                            f"2️⃣ {tps[1]:{p_fmt}} ({roi_2}%)\n"
-                            f"3️⃣ {tps[2]:{p_fmt}} ({roi_3}%)\n"
-                            f"4️⃣ {tps[3]:{p_fmt}} ({roi_4}%)\n\n"
-                            f"⭕ <b>Stop Loss {sl:{p_fmt}} ({sl_roi}%)</b>\n\n"
-                            f"📝 <b>RR 1:{rr}</b>\n\n"
-                            f"⚠️ <b>Margin Use 1%-5%(Trading Plan Use)</b>"
-                        )
-                        
-                        send_telegram(msg)
-                        st.session_state.history.insert(0, {"Time": current_time.strftime("%H:%M"), "Coin": coin, "Signal": sig, "Methods": methods_str})
-                        st.session_state.daily_count += 1
-                        st.session_state.signaled_coins.append(coin)
-                        save_full_state()
-                        
-                        if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
-                            if not st.session_state.sent_goodbye:
-                                send_telegram("🚀 Good Bye Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋")
-                                st.session_state.sent_goodbye = True
-                                save_full_state()
-                            break
+            if sig != "NEUTRAL":
+                if st.session_state.daily_count < MAX_DAILY_SIGNALS:
+                    send_telegram("", is_sticker=True); time.sleep(15)
+                    
+                    if sig == "LONG":
+                        sl = sl_long 
+                        if (price - sl) / price < 0.005: sl = price - (atr * 1.5)
+                        dist_percent = (price - sl) / price
+                    
+                    else: # SHORT
+                        sl = sl_short 
+                        if (sl - price) / price < 0.005: sl = price + (atr * 1.5)
+                        dist_percent = (sl - price) / price
+                    
+                    if dist_percent > 0: ideal_leverage = int(TARGET_SL_ROI / (dist_percent * 100))
+                    else: ideal_leverage = 20
+                    
+                    dynamic_leverage = max(5, min(ideal_leverage, MAX_LEVERAGE))
+                    
+                    if sig == "LONG":
+                        dist = price - sl
+                        tp_dist = dist * 2.0
+                        tps = [price + (tp_dist * x * 0.6) for x in range(1, 5)] 
+                        emoji_circle = "🟢"; direction_txt = "Long"
+                    else:
+                        dist = sl - price
+                        tp_dist = dist * 2.0
+                        tps = [price - (tp_dist * x * 0.6) for x in range(1, 5)]
+                        emoji_circle = "🔴"; direction_txt = "Short"
+                    
+                    rr = round(abs(tps[3]-price)/abs(price-sl), 2)
+                    
+                    roi_1 = round(abs(tps[0]-price)/price*100*dynamic_leverage, 1)
+                    roi_2 = round(abs(tps[1]-price)/price*100*dynamic_leverage, 1)
+                    roi_3 = round(abs(tps[2]-price)/price*100*dynamic_leverage, 1)
+                    roi_4 = round(abs(tps[3]-price)/price*100*dynamic_leverage, 1)
+                    sl_roi = round(abs(price-sl)/price*100*dynamic_leverage, 1)
+                    
+                    methods_str = ", ".join(methods)
+                    p_fmt = ".8f" if price < 1 else ".2f"
+
+                    msg = (
+                        f"💎<b>CRYPTO CAMPUS VIP</b>💎\n\n"
+                        f"🌑 <b>{coin} USDT</b>\n\n"
+                        f"{emoji_circle}<b>{direction_txt}</b>\n\n"
+                        f"🚀<b>Isolated</b>\n"
+                        f"📈<b>Leverage {dynamic_leverage}X</b>\n\n"
+                        f"💥<b>Entry {price:{p_fmt}}</b>\n\n"
+                        f"✅<b>Take Profit</b>\n\n"
+                        f"1️⃣ {tps[0]:{p_fmt}} ({roi_1}%)\n"
+                        f"2️⃣ {tps[1]:{p_fmt}} ({roi_2}%)\n"
+                        f"3️⃣ {tps[2]:{p_fmt}} ({roi_3}%)\n"
+                        f"4️⃣ {tps[3]:{p_fmt}} ({roi_4}%)\n\n"
+                        f"⭕ <b>Stop Loss {sl:{p_fmt}} ({sl_roi}%)</b>\n\n"
+                        f"📝 <b>RR 1:{rr}</b>\n\n"
+                        f"⚠️ <b>Margin Use 1%-5%(Trading Plan Use)</b>"
+                    )
+                    
+                    send_telegram(msg)
+                    st.session_state.history.insert(0, {"Time": current_time.strftime("%H:%M"), "Coin": coin, "Signal": sig, "Methods": methods_str})
+                    st.session_state.daily_count += 1
+                    st.session_state.signaled_coins.append(coin)
+                    save_full_state()
+                    
+                    if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
+                        if not st.session_state.sent_goodbye:
+                            send_telegram("🚀 Good Bye Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋")
+                            st.session_state.sent_goodbye = True
+                            save_full_state()
+                        break
 
         except: pass
         progress_bar.progress((i + 1) / len(coins_list))
@@ -454,10 +467,8 @@ with tab1:
         # --- SMART GOODBYE LOGIC ---
         if current_time.hour >= END_HOUR and not st.session_state.sent_goodbye:
             if st.session_state.daily_count > 0:
-                # If signals were given, standard goodbye
                 msg = "🚀 Good Bye Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋"
             else:
-                # If NO signals were given, the "Disciplined Trader" message
                 msg = "🛑 **Market Update:** අද Market එකේ අපේ Strategy එකට ගැලපෙන High Probability Setups තිබුනේ නෑ (Choppy Market). 📉\n\nබොරු Trades දාලා Loss කරගන්නවට වඩා, ඉවසීමෙන් Capital එක ආරක්ෂා කරගන්න එක තමයි Professional Trading කියන්නේ. 🧠💎\n\nහෙට අලුත් දවසකින් හමුවෙමු! Good Night Traders! 👋"
             
             send_telegram(msg)
