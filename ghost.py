@@ -354,23 +354,28 @@ def run_scan():
             progress_bar.progress((i + 1) / len(coins_list)); continue
 
         try:
+            # FIX: Show "Checking" BEFORE fetching data to be responsive
+            status_area.markdown(f"👀 **Checking:** `{coin}` ...")
+            
             df = get_data(f"{coin}/USDT:USDT")
             if not df.empty:
                 sig, score, price, atr, sl_long, sl_short, methods = analyze_ultimate(df, coin)
-                status_area.markdown(f"👀 **Checking:** `{coin}` | 📊 **Score:** `{score}/100`")
-                time.sleep(0.05)
+                
+                # FIX: Show "Score" AFTER analysis
+                status_area.markdown(f"👀 **Checked:** `{coin}` | 📊 **Score:** `{score}/100`")
+                time.sleep(0.05) # Small delay to make it visible
 
                 if sig != "NEUTRAL":
                     if st.session_state.daily_count < MAX_DAILY_SIGNALS:
                         send_telegram("", is_sticker=True); time.sleep(15)
                         
                         if sig == "LONG":
-                            sl = sl_long # ATR Buffered
+                            sl = sl_long 
                             if (price - sl) / price < 0.005: sl = price - (atr * 1.5)
                             dist_percent = (price - sl) / price
                         
                         else: # SHORT
-                            sl = sl_short # ATR Buffered
+                            sl = sl_short 
                             if (sl - price) / price < 0.005: sl = price + (atr * 1.5)
                             dist_percent = (sl - price) / price
                         
