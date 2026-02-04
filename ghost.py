@@ -19,8 +19,10 @@ START_HOUR = 7
 END_HOUR = 21    
 MAX_DAILY_SIGNALS = 8 
 
-# --- METHOD CONFIG ---
-SCORE_THRESHOLD = 80  
+# --- METHOD CONFIG (UPDATED) ---
+# දැන් ලකුණු 85 ට වැඩි නම් පමණක් BUY වේ.
+# ලකුණු 15 ට අඩු නම් (100-85) පමණක් SELL වේ.
+SCORE_THRESHOLD = 85  
 
 # --- DYNAMIC SETTINGS ---
 MAX_LEVERAGE = 50  
@@ -106,7 +108,6 @@ def get_data(symbol, limit=200, timeframe='15m'):
         df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         
-        # Ensure numeric types
         cols = ['open', 'high', 'low', 'close', 'volume']
         df[cols] = df[cols].apply(pd.to_numeric, errors='coerce')
         
@@ -127,10 +128,10 @@ def check_news_impact(btc_df):
     if btc_df.empty: return False
     curr = btc_df.iloc[-1]
     change = abs(curr['close'] - curr['open']) / curr['open'] * 100
-    if change > 1.5: return True # SHOCK DETECTED
+    if change > 1.5: return True 
     return False
 
-# --- THE 13 METHOD ANALYZER (GHOST ENGINE 2.0 - PRO) ---
+# --- THE 13 METHOD ANALYZER (DEEP ANALYSIS MODE) ---
 def analyze_ultimate(df, coin_name):
     if df.empty or len(df) < 200: return "NEUTRAL", 0, 0, 0, 0, 0, []
     
@@ -139,6 +140,7 @@ def analyze_ultimate(df, coin_name):
         df_4h = get_data(f"{coin_name}/USDT:USDT", limit=50, timeframe='4h')
         if not df_4h.empty:
             df_4h['ema200'] = ta.ema(df_4h['close'], 200)
+            # Deep Check: Is price significantly above EMA?
             trend_4h = "BULLISH" if df_4h.iloc[-1]['close'] > df_4h.iloc[-1].get('ema200', 0) else "BEARISH"
         else: trend_4h = "NEUTRAL"
         
@@ -152,37 +154,31 @@ def analyze_ultimate(df, coin_name):
     except:
         trend_4h = "NEUTRAL"; prev_day_low = 0; prev_day_high = 9999999
 
-    # --- INDICATORS ---
+    # --- INDICATORS CALCULATION ---
     df['rsi'] = ta.rsi(df['close'], 14)
     
-    # StochRSI Safety
     stoch = ta.stochrsi(df['close'], length=14, k=3, d=3)
     if stoch is not None and not stoch.empty:
-        df['stoch_k'] = stoch.iloc[:, 0] # Safe access by index
+        df['stoch_k'] = stoch.iloc[:, 0]
     else:
-        df['stoch_k'] = 50 # Default if fail
+        df['stoch_k'] = 50
         
     df['adx'] = ta.adx(df['high'], df['low'], df['close'], length=14)['ADX_14']
     df['ema200'] = ta.ema(df['close'], 200)
     df['atr'] = ta.atr(df['high'], df['low'], df['close'], 14)
     
-    # MACD Safety
     macd = ta.macd(df['close'])
     if macd is not None and not macd.empty:
-        df['macd'] = macd.iloc[:, 0] # MACD Line
-        df['macd_signal'] = macd.iloc[:, 2] # Signal Line (Check index 2 is signal)
+        df['macd'] = macd.iloc[:, 0]
+        df['macd_signal'] = macd.iloc[:, 2]
     else:
         df['macd'] = 0; df['macd_signal'] = 0
 
-    # --- FIX: MANUAL BOLLINGER BANDS CALCULATION (No Library Error) ---
-    # Calculating manually to avoid KeyError 'BBU_20_2.0'
+    # Manual Bollinger Bands
     mid = df['close'].rolling(20).mean()
     std = df['close'].rolling(20).std()
     df['bb_upper'] = mid + (2 * std)
     df['bb_lower'] = mid - (2 * std)
-    
-    # BB Width calculation
-    # Avoid division by zero
     mid = mid.replace(0, 1)
     df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / mid
 
@@ -202,7 +198,7 @@ def analyze_ultimate(df, coin_name):
     # --- METHOD 2: ADX Filter ---
     if curr['adx'] < 20: return "NEUTRAL", 0, 0, 0, 0, 0, ["LOW ADX (CHOP)"]
         
-    # --- METHOD 1 + SAFETY 1: Trend ---
+    # --- METHOD 1 + SAFETY 1: Trend Deep Check ---
     is_15m_bull = curr['close'] > curr['ema200']
     is_15m_bear = curr['close'] < curr['ema200']
     structure_broken_down = curr['close'] < prev_day_low
@@ -210,21 +206,22 @@ def analyze_ultimate(df, coin_name):
 
     if trend_4h == "BULLISH" and is_15m_bull: 
         if not structure_broken_down: score += 15
-        else: score -= 50 
+        else: score -= 50 # Severe Penalty
         
     if trend_4h == "BEARISH" and is_15m_bear: 
         if not structure_broken_up: score -= 15
-        else: score += 50 
+        else: score += 50 # Severe Penalty
 
-    # --- METHOD 3: Volume ---
+    # --- METHOD 3: Volume Confirmation ---
     vol_ma = df['volume'].rolling(20).mean().iloc[-1]
     if curr['volume'] > vol_ma:
         if curr['close'] > curr['open']: score += 5 
         else: score -= 5 
     else:
-        if abs(curr['close'] - curr['open']) > curr['atr']: score = 50 
+        # If low volume, check if it's a consolidation (doji)
+        if abs(curr['close'] - curr['open']) > curr['atr']: score -= 5 # Big move no volume = Fake
 
-    # --- METHOD 4: Sniper Entry ---
+    # --- METHOD 4: Sniper Entry (Deep) ---
     stoch_buy = curr['stoch_k'] < 20 and curr['stoch_k'] > prev['stoch_k']
     stoch_sell = curr['stoch_k'] > 80 and curr['stoch_k'] < prev['stoch_k']
     macd_buy = curr['macd'] > curr['macd_signal']
@@ -233,12 +230,21 @@ def analyze_ultimate(df, coin_name):
     if stoch_buy and macd_buy: score += 15; methods_hit.append("Sniper Buy")
     if stoch_sell and macd_sell: score -= 15; methods_hit.append("Sniper Sell")
 
-    # --- METHOD 5: MSNR ---
-    res = df['high'].iloc[-50:].max(); sup = df['low'].iloc[-50:].min()
-    if abs(curr['close'] - sup) < (curr['atr'] * 0.5): score += 10; methods_hit.append("Support Bounce")
-    if abs(curr['close'] - res) < (curr['atr'] * 0.5): score -= 10; methods_hit.append("Resistance Reject")
+    # --- METHOD 5: MSNR (Deep Level Analysis) ---
+    # Finding Swing Highs/Lows in last 50 candles
+    swing_high = df['high'].iloc[-50:].max()
+    swing_low = df['low'].iloc[-50:].min()
+    
+    # Deep Check: Is price rejecting the level? (Wick check)
+    # Buy: Price touched support but closed above it (Rejection)
+    if (curr['low'] <= swing_low * 1.005) and (curr['close'] > curr['low']): 
+        score += 10; methods_hit.append("Support Rejection Buy")
+        
+    # Sell: Price touched resistance but closed below it (Rejection)
+    if (curr['high'] >= swing_high * 0.995) and (curr['close'] < curr['high']):
+        score -= 10; methods_hit.append("Resistance Rejection Sell")
 
-    # --- METHOD 6: Liquidity Grab ---
+    # --- METHOD 6: Liquidity Grab (Wick Analysis) ---
     local_low = df['low'].iloc[-10:-1].min()
     if prev['low'] < local_low and curr['close'] > prev['high']:
         score += 15; methods_hit.append("Liquidity Grab Buy")
@@ -258,20 +264,23 @@ def analyze_ultimate(df, coin_name):
         score += 15; methods_hit.append("RSI Divergence")
 
     # --- METHOD 12: BB Squeeze ---
-    # Fix: Using safe width calculation
     mean_width = df['bb_width'].rolling(20).mean().iloc[-1]
     if curr['bb_width'] < mean_width * 0.8:
         if curr['close'] > curr['bb_upper']: score += 15; methods_hit.append("BB Breakout Buy")
         elif curr['close'] < curr['bb_lower']: score -= 15; methods_hit.append("BB Breakout Sell")
 
     # --- SAFETY 4: ATR BUFFER ---
-    swing_low = df['low'].iloc[-15:].min()  
-    swing_high = df['high'].iloc[-15:].max()
+    swing_low_sl = df['low'].iloc[-15:].min()  
+    swing_high_sl = df['high'].iloc[-15:].max()
     atr_buffer = curr['atr'] * 0.5
-    sl_long = swing_low - atr_buffer
-    sl_short = swing_high + atr_buffer
+    sl_long = swing_low_sl - atr_buffer
+    sl_short = swing_high_sl + atr_buffer
 
+    # --- FINAL VERDICT (Strict 85% Rule) ---
+    # Buy > 85
+    # Sell < 15 (Symmetric to 85)
     sig = "LONG" if score >= SCORE_THRESHOLD else "SHORT" if score <= (100 - SCORE_THRESHOLD) else "NEUTRAL"
+    
     return sig, score, curr['close'], curr['atr'], sl_long, sl_short, methods_hit
 
 # --- SESSION STATE ---
@@ -384,22 +393,20 @@ def run_scan():
         try:
             status_area.markdown(f"👀 **Checking:** `{coin}` ...")
             
-            # --- ROBUST DATA LOADING ---
             df = get_data(f"{coin}/USDT:USDT")
             
             if df.empty:
-                # ERROR VISIBILITY FIX: Show specific error on screen
                 status_area.markdown(f"⚠️ **Error:** `{coin}` (Failed to Fetch Data)")
                 time.sleep(1) 
                 continue 
 
             sig, score, price, atr, sl_long, sl_short, methods = analyze_ultimate(df, coin)
             
-            score_color = "green" if score > 80 else "orange" if score > 50 else "red"
+            # Color logic for 85 threshold
+            score_color = "green" if score >= 85 else "red" if score <= 15 else "orange"
             
-            # SUCCESS VISIBILITY FIX
             status_area.markdown(f"👀 **Checked:** `{coin}` | 📊 **Score:** :{score_color}[`{score}/100`]")
-            time.sleep(1) # FORCE DELAY (so you see the score)
+            time.sleep(1) 
 
             if sig != "NEUTRAL":
                 if st.session_state.daily_count < MAX_DAILY_SIGNALS:
@@ -473,9 +480,8 @@ def run_scan():
                         break
         
         except Exception as e:
-            # GLOBAL ERROR CATCHER
             status_area.markdown(f"⚠️ **Error:** `{coin}` - {str(e)}")
-            time.sleep(1) # FORCE DELAY ON ERROR
+            time.sleep(1) 
         
         progress_bar.progress((i + 1) / len(coins_list))
     
@@ -488,7 +494,6 @@ with tab1:
             st.session_state.sent_morning = True
             save_full_state()
 
-        # --- SMART GOODBYE LOGIC ---
         if current_time.hour >= END_HOUR and not st.session_state.sent_goodbye:
             if st.session_state.daily_count > 0:
                 msg = "🚀 Good Bye Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋"
