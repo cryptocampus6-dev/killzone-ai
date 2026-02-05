@@ -7,6 +7,7 @@ import requests
 import pytz
 import os
 import json
+import numpy as np
 from datetime import datetime
 
 # --- USER SETTINGS ---
@@ -15,14 +16,12 @@ CHANNEL_ID = "-1003731551541"
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWlMq--iOTVBE4BA"
 
 # --- TIME SETTINGS ---
-START_HOUR = 7   
-END_HOUR = 21    
+START_HOUR = 7    
+END_HOUR = 21     
 MAX_DAILY_SIGNALS = 8 
 
-# --- METHOD CONFIG (UPDATED) ---
-# දැන් ලකුණු 85 ට වැඩි නම් පමණක් BUY වේ.
-# ලකුණු 15 ට අඩු නම් (100-85) පමණක් SELL වේ.
-SCORE_THRESHOLD = 85  
+# --- METHOD CONFIG ---
+SCORE_THRESHOLD = 85   
 
 # --- DYNAMIC SETTINGS ---
 MAX_LEVERAGE = 50  
@@ -115,173 +114,125 @@ def get_data(symbol, limit=200, timeframe='15m'):
     except Exception as e:
         return pd.DataFrame() 
 
-# --- METHOD 13: TIME ANALYSIS ---
-def get_time_analysis():
-    now = datetime.now(lz)
-    hour = now.hour
-    if 12 <= hour <= 22: return "HIGH_VOLUME", 10 
-    elif 2 <= hour <= 6: return "DEAD_ZONE", -50 
-    else: return "NEUTRAL", 0
+# ==============================================================================
+# 🧠 NEW ULTIMATE LOGIC (REPLACING THE OLD 13 METHODS)
+# ==============================================================================
 
-# --- METHOD 9: NEWS IMPACT CHECK ---
-def check_news_impact(btc_df):
-    if btc_df.empty: return False
-    curr = btc_df.iloc[-1]
-    change = abs(curr['close'] - curr['open']) / curr['open'] * 100
-    if change > 1.5: return True 
-    return False
+# --- A. MALAYSIAN SNR: QML ---
+def detect_qml(df):
+    # Swing High/Low detection
+    df['swing_high'] = df['high'][(df['high'].shift(1) < df['high']) & (df['high'].shift(-1) < df['high'])]
+    df['swing_low'] = df['low'][(df['low'].shift(1) > df['low']) & (df['low'].shift(-1) > df['low'])]
+    
+    last_highs = df['swing_high'].dropna().tail(2).values
+    last_lows = df['swing_low'].dropna().tail(2).values
+    
+    qml_bearish, qml_bullish = False, False
+    
+    if len(last_highs) >= 2 and len(last_lows) >= 2:
+        # Bearish QML: High -> Low -> Higher High -> Break Low
+        if last_highs[1] > last_highs[0] and df['close'].iloc[-1] < last_lows[1]: 
+            qml_bearish = True
+        # Bullish QML: Low -> High -> Lower Low -> Break High
+        if last_lows[1] < last_lows[0] and df['close'].iloc[-1] > last_highs[1]: 
+            qml_bullish = True
+            
+    return qml_bullish, qml_bearish
 
-# --- THE 13 METHOD ANALYZER (DEEP ANALYSIS MODE) ---
+# --- B. ICT & C. CRT ---
+def detect_ict_crt(df):
+    # ICT Fair Value Gaps
+    bullish_fvg = (df['low'].shift(2) > df['high']) 
+    bearish_fvg = (df['high'].shift(2) < df['low'])
+    
+    # CRT: Body Break Check (Golden Rule: Wick=Fake, Body=Real)
+    ref_high = df['high'].shift(5) # Reference candle 
+    ref_low = df['low'].shift(5)
+    
+    body_break_up = df['close'].iloc[-1] > ref_high.iloc[-1]
+    body_break_down = df['close'].iloc[-1] < ref_low.iloc[-1]
+    
+    return bullish_fvg.iloc[-1], bearish_fvg.iloc[-1], body_break_up, body_break_down
+
+# --- D. NEWS FILTER (Volatility Check) ---
+def check_news_volatility(df):
+    df['tr'] = np.maximum(df['high'] - df['low'], 
+                          np.maximum(abs(df['high'] - df['close'].shift(1)), 
+                                     abs(df['low'] - df['close'].shift(1))))
+    df['atr'] = df['tr'].rolling(14).mean()
+    # If volatility is 3x normal -> High Impact News likely
+    return df['tr'].iloc[-1] > (3 * df['atr'].iloc[-1])
+
+# --- MASTER ANALYSIS FUNCTION ---
 def analyze_ultimate(df, coin_name):
-    if df.empty or len(df) < 200: return "NEUTRAL", 0, 0, 0, 0, 0, []
-    
-    # --- SAFETY 1: FETCH HIGHER TIMEFRAMES ---
-    try:
-        df_4h = get_data(f"{coin_name}/USDT:USDT", limit=50, timeframe='4h')
-        if not df_4h.empty:
-            df_4h['ema200'] = ta.ema(df_4h['close'], 200)
-            # Deep Check: Is price significantly above EMA?
-            trend_4h = "BULLISH" if df_4h.iloc[-1]['close'] > df_4h.iloc[-1].get('ema200', 0) else "BEARISH"
-        else: trend_4h = "NEUTRAL"
-        
-        df_daily = get_data(f"{coin_name}/USDT:USDT", limit=5, timeframe='1d')
-        if not df_daily.empty:
-            prev_day = df_daily.iloc[-2] 
-            prev_day_low = prev_day['low']
-            prev_day_high = prev_day['high']
-        else:
-            prev_day_low = 0; prev_day_high = 9999999
-    except:
-        trend_4h = "NEUTRAL"; prev_day_low = 0; prev_day_high = 9999999
+    if df.empty or len(df) < 50: 
+        return "NEUTRAL", 0, 0, 0, 0, 0, []
 
-    # --- INDICATORS CALCULATION ---
-    df['rsi'] = ta.rsi(df['close'], 14)
-    
-    stoch = ta.stochrsi(df['close'], length=14, k=3, d=3)
-    if stoch is not None and not stoch.empty:
-        df['stoch_k'] = stoch.iloc[:, 0]
-    else:
-        df['stoch_k'] = 50
-        
-    df['adx'] = ta.adx(df['high'], df['low'], df['close'], length=14)['ADX_14']
-    df['ema200'] = ta.ema(df['close'], 200)
+    # Calculate basic indicators needed for signal return (ATR for SL)
     df['atr'] = ta.atr(df['high'], df['low'], df['close'], 14)
+    curr = df.iloc[-1]
     
-    macd = ta.macd(df['close'])
-    if macd is not None and not macd.empty:
-        df['macd'] = macd.iloc[:, 0]
-        df['macd_signal'] = macd.iloc[:, 2]
-    else:
-        df['macd'] = 0; df['macd_signal'] = 0
+    # 1. News/Volatility Filter
+    if check_news_volatility(df):
+        return "NEUTRAL", 0, 0, 0, 0, 0, ["HIGH VOLATILITY DETECTED"]
 
-    # Manual Bollinger Bands
-    mid = df['close'].rolling(20).mean()
-    std = df['close'].rolling(20).std()
-    df['bb_upper'] = mid + (2 * std)
-    df['bb_lower'] = mid - (2 * std)
-    mid = mid.replace(0, 1)
-    df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / mid
+    # 2. Time Check (Killzones - London/NY)
+    current_hour = datetime.now(pytz.utc).hour
+    is_killzone = (7 <= current_hour <= 17) or (12 <= current_hour <= 22)
 
-    curr = df.iloc[-1]; prev = df.iloc[-2]
-    score = 50; methods_hit = []
+    # 3. Run Methods
+    qml_buy, qml_sell = detect_qml(df)
+    fvg_buy, fvg_sell, crt_buy, crt_sell = detect_ict_crt(df)
+
+    # 4. Scoring System
+    methods_hit = []
     
-    # --- SAFETY 2: FLASH CRASH SHIELD ---
-    candle_size = abs(curr['high'] - curr['low'])
-    if candle_size > (curr['atr'] * 3): 
-        return "NEUTRAL", 0, 0, 0, 0, 0, ["VOLATILITY SPIKE"]
-
-    # --- METHOD 13: Time Analysis ---
-    time_status, time_score = get_time_analysis()
-    score += time_score
-    if time_status == "DEAD_ZONE": return "NEUTRAL", 0, 0, 0, 0, 0, ["DEAD ZONE"]
-
-    # --- METHOD 2: ADX Filter ---
-    if curr['adx'] < 20: return "NEUTRAL", 0, 0, 0, 0, 0, ["LOW ADX (CHOP)"]
-        
-    # --- METHOD 1 + SAFETY 1: Trend Deep Check ---
-    is_15m_bull = curr['close'] > curr['ema200']
-    is_15m_bear = curr['close'] < curr['ema200']
-    structure_broken_down = curr['close'] < prev_day_low
-    structure_broken_up = curr['close'] > prev_day_high
-
-    if trend_4h == "BULLISH" and is_15m_bull: 
-        if not structure_broken_down: score += 15
-        else: score -= 50 # Severe Penalty
-        
-    if trend_4h == "BEARISH" and is_15m_bear: 
-        if not structure_broken_up: score -= 15
-        else: score += 50 # Severe Penalty
-
-    # --- METHOD 3: Volume Confirmation ---
-    vol_ma = df['volume'].rolling(20).mean().iloc[-1]
-    if curr['volume'] > vol_ma:
-        if curr['close'] > curr['open']: score += 5 
-        else: score -= 5 
-    else:
-        # If low volume, check if it's a consolidation (doji)
-        if abs(curr['close'] - curr['open']) > curr['atr']: score -= 5 # Big move no volume = Fake
-
-    # --- METHOD 4: Sniper Entry (Deep) ---
-    stoch_buy = curr['stoch_k'] < 20 and curr['stoch_k'] > prev['stoch_k']
-    stoch_sell = curr['stoch_k'] > 80 and curr['stoch_k'] < prev['stoch_k']
-    macd_buy = curr['macd'] > curr['macd_signal']
-    macd_sell = curr['macd'] < curr['macd_signal']
+    # --- BUY SCORE ---
+    buy_score = 0
+    if qml_buy: 
+        buy_score += 30; methods_hit.append("QML Buy")
+    if fvg_buy: 
+        buy_score += 20; methods_hit.append("ICT FVG Buy")
+    if crt_buy: 
+        buy_score += 20; methods_hit.append("CRT Body Break Buy")
+    if is_killzone: 
+        buy_score += 15; methods_hit.append("Killzone Active")
     
-    if stoch_buy and macd_buy: score += 15; methods_hit.append("Sniper Buy")
-    if stoch_sell and macd_sell: score -= 15; methods_hit.append("Sniper Sell")
+    # --- SELL SCORE ---
+    sell_score = 0
+    if qml_sell: 
+        sell_score += 30; methods_hit.append("QML Sell")
+    if fvg_sell: 
+        sell_score += 20; methods_hit.append("ICT FVG Sell")
+    if crt_sell: 
+        sell_score += 20; methods_hit.append("CRT Body Break Sell")
+    if is_killzone: 
+        sell_score += 15; methods_hit.append("Killzone Active")
 
-    # --- METHOD 5: MSNR (Deep Level Analysis) ---
-    # Finding Swing Highs/Lows in last 50 candles
-    swing_high = df['high'].iloc[-50:].max()
-    swing_low = df['low'].iloc[-50:].min()
+    # Final Signal Determination
+    final_score = 50 # Base score
+    sig = "NEUTRAL"
+
+    if buy_score >= 85:
+        final_score = buy_score # Scale to > 85
+        sig = "LONG"
+    elif sell_score >= 85:
+        final_score = 100 - sell_score # Scale to < 15 for logic consistency
+        sig = "SHORT"
+
+    # Calculate SL Levels (Based on Swing Points)
+    swing_low = df['low'].tail(10).min()
+    swing_high = df['high'].tail(10).max()
     
-    # Deep Check: Is price rejecting the level? (Wick check)
-    # Buy: Price touched support but closed above it (Rejection)
-    if (curr['low'] <= swing_low * 1.005) and (curr['close'] > curr['low']): 
-        score += 10; methods_hit.append("Support Rejection Buy")
-        
-    # Sell: Price touched resistance but closed below it (Rejection)
-    if (curr['high'] >= swing_high * 0.995) and (curr['close'] < curr['high']):
-        score -= 10; methods_hit.append("Resistance Rejection Sell")
+    # Safety buffer
+    sl_long = swing_low * 0.995 
+    sl_short = swing_high * 1.005
 
-    # --- METHOD 6: Liquidity Grab (Wick Analysis) ---
-    local_low = df['low'].iloc[-10:-1].min()
-    if prev['low'] < local_low and curr['close'] > prev['high']:
-        score += 15; methods_hit.append("Liquidity Grab Buy")
+    return sig, final_score, curr['close'], curr['atr'], sl_long, sl_short, methods_hit
 
-    # --- METHOD 7: Price Action ---
-    if prev['close'] < prev['open'] and curr['close'] > curr['open'] and curr['close'] > prev['open']:
-        score += 10; methods_hit.append("Bullish Engulfing")
-    
-    # --- METHOD 8: ICT (FVG) ---
-    if df.iloc[-3]['high'] < df.iloc[-1]['low']: score += 10; methods_hit.append("FVG Support")
-    
-    # --- METHOD 10: Fib ---
-    if 40 < curr['rsi'] < 60 and trend_4h == "BULLISH": score += 5; methods_hit.append("Fib Pullback")
-
-    # --- METHOD 11: RSI Divergence ---
-    if curr['close'] < df['close'].iloc[-5] and curr['rsi'] > df['rsi'].iloc[-5]:
-        score += 15; methods_hit.append("RSI Divergence")
-
-    # --- METHOD 12: BB Squeeze ---
-    mean_width = df['bb_width'].rolling(20).mean().iloc[-1]
-    if curr['bb_width'] < mean_width * 0.8:
-        if curr['close'] > curr['bb_upper']: score += 15; methods_hit.append("BB Breakout Buy")
-        elif curr['close'] < curr['bb_lower']: score -= 15; methods_hit.append("BB Breakout Sell")
-
-    # --- SAFETY 4: ATR BUFFER ---
-    swing_low_sl = df['low'].iloc[-15:].min()  
-    swing_high_sl = df['high'].iloc[-15:].max()
-    atr_buffer = curr['atr'] * 0.5
-    sl_long = swing_low_sl - atr_buffer
-    sl_short = swing_high_sl + atr_buffer
-
-    # --- FINAL VERDICT (Strict 85% Rule) ---
-    # Buy > 85
-    # Sell < 15 (Symmetric to 85)
-    sig = "LONG" if score >= SCORE_THRESHOLD else "SHORT" if score <= (100 - SCORE_THRESHOLD) else "NEUTRAL"
-    
-    return sig, score, curr['close'], curr['atr'], sl_long, sl_short, methods_hit
+# ==============================================================================
+# END OF NEW LOGIC
+# ==============================================================================
 
 # --- SESSION STATE ---
 saved_data = load_data()
@@ -378,7 +329,8 @@ def run_scan():
 
     try:
         btc_df = get_data("BTC/USDT:USDT", limit=50)
-        if check_news_impact(btc_df):
+        # Using new volatility check logic here as well for BTC general market check
+        if check_news_volatility(btc_df):
             st.error("🚨 HIGH VOLATILITY / NEWS DETECTED! SCAN PAUSED.")
             return
     except: pass
