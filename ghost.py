@@ -129,16 +129,12 @@ def analyze_msnr(df):
         if last_lows[1] < last_lows[0] and df['close'].iloc[-1] > last_highs[1]:
             qml_bullish = True
             
-        # Fresh Level Check: Has price touched this level in the last 20 candles?
-        current_price = df['close'].iloc[-1]
-        recent_prices = df['high'].iloc[-20:-1] if qml_bearish else df['low'].iloc[-20:-1]
-        # Simplistic check: if no candle touched exactly the entry price recently
-        fresh_level = True # Assuming fresh for QML formation moment
+        fresh_level = True 
 
     # Compression (CP) Detection: Small body candles approaching level
     avg_body = abs(df['open'] - df['close']).mean()
     last_3_bodies = abs(df['open'].tail(3) - df['close'].tail(3)).mean()
-    if last_3_bodies < avg_body * 0.7: # Candles are getting smaller (squeezing)
+    if last_3_bodies < avg_body * 0.7: 
         compression = True
 
     return qml_bullish, qml_bearish, fresh_level, compression
@@ -156,8 +152,7 @@ def analyze_ict(df):
     prev_low = df['low'].rolling(10).min().shift(1)
     sweep_low = (df['low'] < prev_low) & (df['close'] > prev_low)
 
-    # Order Block Detection (Last opposite candle before a move)
-    # Simple logic: Bearish OB = Last Up candle before sharp down move
+    # Order Block Detection
     bearish_ob = (df['close'].shift(1) > df['open'].shift(1)) and (df['close'] < df['open']) and (df['close'] < df['low'].shift(1))
     bullish_ob = (df['close'].shift(1) < df['open'].shift(1)) and (df['close'] > df['open']) and (df['close'] > df['high'].shift(1))
 
@@ -176,8 +171,7 @@ def analyze_crt(df):
     body_break_up = df['close'].iloc[-1] > ref_high.iloc[-1]
     body_break_down = df['close'].iloc[-1] < ref_low.iloc[-1]
     
-    # Retest Logic: Did price break and come back?
-    # Checking if current candle is red (retest) after a green break
+    # Retest Logic
     retest_buy = body_break_up and (df['close'].iloc[-1] < df['open'].iloc[-1]) 
     retest_sell = body_break_down and (df['close'].iloc[-1] > df['open'].iloc[-1])
 
@@ -185,20 +179,14 @@ def analyze_crt(df):
 
 # --- 4. FUNDAMENTAL NEWS (PUMP & DUMP CYCLE) ---
 def analyze_news_impact(df):
-    # ATR & Volume Shock (Simulating News Impact)
     df['tr'] = np.maximum(df['high'] - df['low'], np.maximum(abs(df['high'] - df['close'].shift(1)), abs(df['low'] - df['close'].shift(1))))
     df['atr'] = df['tr'].rolling(14).mean()
-    
-    # 1. Volatility Spike (News Event)
     news_spike = df['tr'].iloc[-1] > (3 * df['atr'].iloc[-1])
     
-    # 2. Volume Shock (Pump/Dump Indicator)
     avg_vol = df['volume'].rolling(20).mean()
     vol_shock = df['volume'].iloc[-1] > (3 * avg_vol.iloc[-1])
     
-    # Pump Cycle Detection: High Vol + Price Up
     is_pump = vol_shock and (df['close'].iloc[-1] > df['open'].iloc[-1])
-    # Dump Cycle Detection: High Vol + Price Down
     is_dump = vol_shock and (df['close'].iloc[-1] < df['open'].iloc[-1])
 
     return news_spike, is_pump, is_dump
@@ -207,23 +195,17 @@ def analyze_news_impact(df):
 def analyze_ultimate_100(df, coin_name):
     if df.empty or len(df) < 50: return "NEUTRAL", 0, 0, 0, 0, 0, []
 
-    # Indicators
     df['atr'] = ta.atr(df['high'], df['low'], df['close'], 14)
     curr = df.iloc[-1]
     
-    # 1. NEWS ANALYSIS
     news_spike, is_pump, is_dump = analyze_news_impact(df)
     if news_spike:
-        # If volatility is extreme, we assume a News Event.
-        # Strategy: Wait for Retracement (Type A Entry). Do NOT enter immediately.
         return "NEUTRAL", 0, 0, 0, 0, 0, ["NEWS SPIKE - WAITING"]
 
-    # 2. RUN ALL METHODS
     msnr_buy, msnr_sell, fresh, compression = analyze_msnr(df)
     ict_buy_fvg, ict_sell_fvg, sweep_buy, sweep_sell, ict_buy_ob, ict_sell_ob, silver_bullet = analyze_ict(df)
     crt_buy, crt_sell, retest_buy, retest_sell = analyze_crt(df)
 
-    # 3. KILLZONES (TIME)
     current_hour = datetime.now(pytz.utc).hour
     killzone = (7 <= current_hour <= 17) or (12 <= current_hour <= 22)
 
@@ -232,38 +214,29 @@ def analyze_ultimate_100(df, coin_name):
     sell_score = 0
 
     # --- BUY SCORING ---
-    if msnr_buy:
-        buy_score += 25; methods_hit.append("MSNR QML Buy")
-        if fresh: buy_score += 5; methods_hit.append("Fresh Zone")
-        if compression: buy_score += 5; methods_hit.append("Compression")
-        
+    if msnr_buy: buy_score += 25; methods_hit.append("MSNR QML Buy")
+    if fresh: buy_score += 5; methods_hit.append("Fresh Zone")
+    if compression: buy_score += 5; methods_hit.append("Compression")
     if ict_buy_fvg: buy_score += 10; methods_hit.append("ICT FVG")
     if sweep_buy: buy_score += 15; methods_hit.append("Liquidity Sweep")
     if ict_buy_ob: buy_score += 10; methods_hit.append("Order Block")
-    
     if crt_buy: buy_score += 15; methods_hit.append("CRT Body Break")
     if retest_buy: buy_score += 10; methods_hit.append("CRT Retest")
-    
     if silver_bullet: buy_score += 10; methods_hit.append("Silver Bullet Time")
     if killzone: buy_score += 5
 
     # --- SELL SCORING ---
-    if msnr_sell:
-        sell_score += 25; methods_hit.append("MSNR QML Sell")
-        if fresh: sell_score += 5; methods_hit.append("Fresh Zone")
-        if compression: sell_score += 5; methods_hit.append("Compression")
-        
+    if msnr_sell: sell_score += 25; methods_hit.append("MSNR QML Sell")
+    if fresh: sell_score += 5; methods_hit.append("Fresh Zone")
+    if compression: sell_score += 5; methods_hit.append("Compression")
     if ict_sell_fvg: sell_score += 10; methods_hit.append("ICT FVG")
     if sweep_sell: sell_score += 15; methods_hit.append("Liquidity Sweep")
     if ict_sell_ob: sell_score += 10; methods_hit.append("Order Block")
-    
     if crt_sell: sell_score += 15; methods_hit.append("CRT Body Break")
     if retest_sell: sell_score += 10; methods_hit.append("CRT Retest")
-    
     if silver_bullet: sell_score += 10; methods_hit.append("Silver Bullet Time")
     if killzone: sell_score += 5
 
-    # --- FINAL DECISION ---
     sig = "NEUTRAL"
     final_score = 50
 
@@ -272,19 +245,17 @@ def analyze_ultimate_100(df, coin_name):
         final_score = buy_score
     elif sell_score >= SCORE_THRESHOLD:
         sig = "SHORT"
-        final_score = 100 - sell_score # Invert for dashboard logic
+        final_score = 100 - sell_score 
 
-    # SL / TP Calculation (Based on Structure)
     swing_low = df['low'].tail(10).min()
     swing_high = df['high'].tail(10).max()
-    
     sl_long = swing_low * 0.995
     sl_short = swing_high * 1.005
 
     return sig, final_score, curr['close'], curr['atr'], sl_long, sl_short, methods_hit
 
 # ==============================================================================
-# MAIN APP LOOP (UNCHANGED UI)
+# MAIN APP LOOP
 # ==============================================================================
 
 # --- SESSION STATE ---
@@ -354,7 +325,6 @@ def run_scan():
             st.session_state.sent_goodbye = True; save_full_state()
         st.warning("⚠️ Daily Signal Limit Reached."); return
 
-    # Global Market Check (BTC) for News Impact
     try:
         btc_df = get_data("BTC/USDT:USDT", limit=50)
         news_spike, _, _ = analyze_news_impact(btc_df)
@@ -363,24 +333,40 @@ def run_scan():
     except: pass
 
     st.markdown(f"### 🔄 Scanning {len(coins_list)} Coins...")
-    progress_bar = st.progress(0); status_area = st.empty()
+    progress_bar = st.progress(0); 
+    status_area = st.empty()
+    
+    # NEW: Log Container for Scores
+    log_container = st.container()
+    log_container.write("---")
+    log_container.markdown("#### 📝 Live Score Log")
+    live_log = log_container.empty()
+    scan_log_text = ""
     
     for i, coin in enumerate(coins_list):
         if coin in st.session_state.signaled_coins: progress_bar.progress((i + 1) / len(coins_list)); continue
         try:
             status_area.markdown(f"👀 **Checking:** `{coin}` ...")
             df = get_data(f"{coin}/USDT:USDT")
-            if df.empty: time.sleep(1); continue
+            if df.empty: time.sleep(0.1); continue
 
             sig, score, price, atr, sl_long, sl_short, methods = analyze_ultimate_100(df, coin)
             
             score_color = "green" if score >= 85 else "red" if score <= 15 else "orange"
             status_area.markdown(f"👀 **Checked:** `{coin}` | 📊 **Score:** :{score_color}[`{score}/100`]")
-            time.sleep(0.5)
+            
+            # Append to Live Log
+            scan_log_text = f"`{coin}`: :{score_color}[{score}] | " + scan_log_text
+            # Keep log cleaner, only last 10
+            if scan_log_text.count("|") > 10:
+                scan_log_text = "|".join(scan_log_text.split("|")[:10])
+            live_log.markdown(scan_log_text)
+
+            time.sleep(0.2) # Small delay to see the score
 
             if sig != "NEUTRAL":
                 if st.session_state.daily_count < MAX_DAILY_SIGNALS:
-                    send_telegram("", is_sticker=True); time.sleep(10)
+                    send_telegram("", is_sticker=True); time.sleep(5)
                     
                     if sig == "LONG":
                         sl = sl_long 
@@ -442,7 +428,8 @@ def run_scan():
                             st.session_state.sent_goodbye = True; save_full_state()
                         break
         except Exception as e:
-            status_area.markdown(f"⚠️ **Error:** `{coin}`"); time.sleep(1)
+            # More descriptive error
+            status_area.markdown(f"⚠️ **Error:** `{coin}`"); time.sleep(0.5)
         progress_bar.progress((i + 1) / len(coins_list))
     status_area.empty(); st.success("Scan Complete!"); return
 
