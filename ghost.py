@@ -1,5 +1,4 @@
 import streamlit as st
-import ccxt
 import pandas as pd
 import pandas_ta as ta
 import time
@@ -90,18 +89,35 @@ def send_telegram(msg, is_sticker=False):
         return True
     except: return False
 
-# --- DATA FETCHING ---
-def get_data(symbol, limit=300, timeframe='15m'):
+# --- ROBUST DATA FETCHING (DIRECT API - NO CCXT) ---
+def get_data(symbol, limit=200, timeframe='15m'):
+    # Uses MEXC Spot API directly for stability (Price action is identical to futures)
     try:
-        exchange = ccxt.mexc({'options': {'defaultType': 'swap'}})
-        exchange.timeout = 15000 
-        bars = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
-        df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+        url = "https://api.mexc.com/api/v3/klines"
+        params = {
+            'symbol': symbol, # Expects BTCUSDT
+            'interval': timeframe,
+            'limit': limit
+        }
+        # Timeout set to 10s to prevent hanging
+        response = requests.get(url, params=params, timeout=10)
+        data = response.json()
+
+        # Error Check
+        if isinstance(data, dict) and "code" in data:
+            return pd.DataFrame() # API Error
+
+        if not isinstance(data, list):
+            return pd.DataFrame()
+
+        df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'c_time', 'qav', 'num', 'tbv', 'tqv', 'ign'])
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         cols = ['open', 'high', 'low', 'close', 'volume']
         df[cols] = df[cols].apply(pd.to_numeric, errors='coerce')
         return df
-    except: return pd.DataFrame() 
+    except Exception as e:
+        # Returning empty DF on network fail
+        return pd.DataFrame() 
 
 # ==============================================================================
 # 🧠 100% IMPLEMENTATION OF "THE TRADING BIBLE"
@@ -234,7 +250,7 @@ if 'last_scan_block_id' not in st.session_state: st.session_state.last_scan_bloc
 if 'sent_morning' not in st.session_state: st.session_state.sent_morning = saved_data['sent_morning']
 if 'sent_goodbye' not in st.session_state: st.session_state.sent_goodbye = saved_data['sent_goodbye']
 
-# NEW: Session state for Live Log to keep it persistent
+# Persistent Log
 if 'scan_log' not in st.session_state: st.session_state.scan_log = ""
 
 if 'coins' not in st.session_state:
@@ -291,7 +307,7 @@ def run_scan():
         st.warning("⚠️ Daily Signal Limit Reached."); return
 
     try:
-        btc_df = get_data("BTC/USDT:USDT", limit=50)
+        btc_df = get_data("BTCUSDT", limit=50) # Use correct symbol format for Spot API
         news_spike, _, _ = analyze_news_impact(btc_df)
         if news_spike: st.error("🚨 MARKET SHOCK DETECTED (BTC VOLATILITY)! PAUSING."); return
     except: pass
@@ -299,20 +315,24 @@ def run_scan():
     st.markdown(f"### 🔄 Scanning {len(coins_list)} Coins...")
     progress_bar = st.progress(0); status_area = st.empty()
     
-    # Persistent Log Container
-    st.session_state.scan_log = "" # Reset for new scan
+    # Persistent Log
     log_placeholder = st.empty()
+    if st.session_state.scan_log == "": st.session_state.scan_log = "Waiting for results..."
 
     for i, coin in enumerate(coins_list):
         if coin in st.session_state.signaled_coins: progress_bar.progress((i + 1) / len(coins_list)); continue
         try:
             status_area.markdown(f"👀 **Checking:** `{coin}` ...")
-            df = get_data(f"{coin}/USDT:USDT")
+            
+            # FIXED: Passing correct symbol format (e.g., "BTCUSDT") to Direct API
+            df = get_data(f"{coin}USDT")
             
             if df.empty: 
                 new_log = f"`{coin}`: ⚠️ No Data | "
                 st.session_state.scan_log = new_log + st.session_state.scan_log
+                if len(st.session_state.scan_log) > 2000: st.session_state.scan_log = st.session_state.scan_log[:2000]
                 log_placeholder.markdown(f"#### 📝 Live Scores:\n{st.session_state.scan_log}")
+                time.sleep(0.1)
                 continue
 
             sig, score, price, atr, sl_long, sl_short, methods = analyze_ultimate_100(df, coin)
@@ -320,13 +340,10 @@ def run_scan():
             score_color = "green" if score >= 85 else "red" if score <= 15 else "orange"
             status_area.markdown(f"👀 **Checked:** `{coin}` | 📊 **Score:** :{score_color}[`{score}/100`]")
             
-            # Update Persistent Log (Prepend new result)
+            # Log Update
             new_log = f"`{coin}`: :{score_color}[**{score}**] | "
             st.session_state.scan_log = new_log + st.session_state.scan_log
-            
-            # Truncate to avoid huge text block
             if len(st.session_state.scan_log) > 2000: st.session_state.scan_log = st.session_state.scan_log[:2000]
-            
             log_placeholder.markdown(f"#### 📝 Live Scores:\n{st.session_state.scan_log}")
 
             if sig != "NEUTRAL":
@@ -392,11 +409,11 @@ def run_scan():
                             st.session_state.sent_goodbye = True; save_full_state()
                         break
         except Exception as e:
-            # Error Logging in Live Feed
-            new_log = f"`{coin}`: ⚠️ Error | "
+            # Debug: Show Error Message
+            new_log = f"`{coin}`: ⚠️ {str(e)} | "
             st.session_state.scan_log = new_log + st.session_state.scan_log
             log_placeholder.markdown(f"#### 📝 Live Scores:\n{st.session_state.scan_log}")
-            status_area.markdown(f"⚠️ **Error:** `{coin}`"); time.sleep(0.1)
+            time.sleep(0.1)
             
         progress_bar.progress((i + 1) / len(coins_list))
     status_area.empty(); st.success("Scan Complete!"); return
@@ -419,7 +436,7 @@ with tab1:
                 run_scan(); st.session_state.force_scan = False; st.rerun()
             else:
                 next_min = 15 - (current_time.minute % 15)
-                # Display persistent log even when monitoring
+                # Show persistent log during wait
                 if st.session_state.scan_log: st.markdown(f"#### 📝 Last Scan Scores:\n{st.session_state.scan_log}")
                 st.info(f"⏳ **Monitoring...** (Next scan in {next_min} mins)"); time.sleep(5); st.rerun()
         else:
