@@ -69,7 +69,6 @@ def get_data(symbol, limit=200):
         
         if not df.empty:
             df = df.reset_index()
-            # Multi-index fix
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.droplevel(1)
             
@@ -80,7 +79,7 @@ def get_data(symbol, limit=200):
     return pd.DataFrame()
 
 # ==============================================================================
-# 🧠 TRADING BIBLE LOGIC (5 METHODS)
+# 🧠 TRADING BIBLE LOGIC (5 METHODS - 100% INCLUDED)
 # ==============================================================================
 
 def analyze_ultimate(df, coin_name):
@@ -97,7 +96,7 @@ def analyze_ultimate(df, coin_name):
     methods_hit = []
     score = 50 
 
-    # --- 1. FUNDAMENTALS (Volatility Check) ---
+    # --- 1. FUNDAMENTALS (Volatility & Whale Check) ---
     if (curr['high'] - curr['low']) > (curr['atr'] * 3.5):
         return "NEUTRAL", 0, 0, 0, 0, 0, ["NEWS SHOCK"]
     
@@ -105,7 +104,7 @@ def analyze_ultimate(df, coin_name):
     is_whale = curr['volume'] > (avg_vol * 3.0)
     if is_whale: methods_hit.append("Whale Vol")
 
-    # --- 2. HTF TREND & MSNR (QML) ---
+    # --- 2. MALAYSIAN SNR (HTF Trend & QML) ---
     trend = "BULL" if curr['close'] > curr['ema200'] else "BEAR"
     
     l = df['low']; h = df['high']
@@ -213,8 +212,17 @@ if col2.button("⏹️ STOP"): st.session_state.bot_active = False; save_full_st
 
 st.sidebar.markdown("---")
 if st.sidebar.button("⚡ FORCE SCAN NOW"): st.session_state.force_scan = True; st.rerun()
-st.sidebar.markdown("---")
 
+# --- NEW RESET BUTTON ---
+if st.sidebar.button("🔄 RESET LIMIT (Admin)"):
+    st.session_state.daily_count = 0
+    st.session_state.signaled_coins = []
+    st.session_state.sent_goodbye = False
+    save_full_state()
+    st.rerun()
+# ------------------------
+
+st.sidebar.markdown("---")
 st.sidebar.subheader("🪙 Coin Manager")
 new_coin = st.sidebar.text_input("Add Coin (e.g. SUI)", "").upper()
 if st.sidebar.button("➕ Add Coin"):
@@ -265,7 +273,7 @@ def run_scan():
             if df.empty:
                 st.session_state.scan_log = f"`{coin}`: ⚠️ No Data | " + st.session_state.scan_log
                 live_log.markdown(f"#### 📝 Live Scores:\n{st.session_state.scan_log}")
-                time.sleep(0.2)
+                time.sleep(0.5)
                 continue 
 
             sig, score, price, atr, sl_long, sl_short, methods = analyze_ultimate(df, coin)
