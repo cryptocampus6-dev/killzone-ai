@@ -163,7 +163,6 @@ def analyze_ict(df):
     sweep_low = (df['low'] < prev_low) & (df['close'] > prev_low)
 
     bearish_ob = (df['close'].shift(1) > df['open'].shift(1)) and (df['close'] < df['open']) and (df['close'] < df['low'].shift(1))
-    # FIXED LINE BELOW
     bullish_ob = (df['close'].shift(1) < df['open'].shift(1)) and (df['close'] > df['open']) and (df['close'] > df['high'].shift(1))
 
     ny_time = datetime.now(pytz.timezone('America/New_York'))
@@ -324,7 +323,6 @@ def run_scan():
     st.markdown(f"### 🔄 Scanning {len(coins_list)} Coins...")
     progress_bar = st.progress(0); status_area = st.empty()
     
-    # Persistent Log
     log_placeholder = st.empty()
     if st.session_state.scan_log == "": st.session_state.scan_log = "Waiting for results..."
 
@@ -349,7 +347,6 @@ def run_scan():
             score_color = "green" if score >= 85 else "red" if score <= 15 else "orange"
             status_area.markdown(f"👀 **Checked:** `{coin}` | 📊 **Score:** :{score_color}[`{score}/100`]")
             
-            # Log Update
             new_log = f"`{coin}`: :{score_color}[**{score}**] | "
             st.session_state.scan_log = new_log + st.session_state.scan_log
             if len(st.session_state.scan_log) > 2000: st.session_state.scan_log = st.session_state.scan_log[:2000]
@@ -432,7 +429,7 @@ with tab1:
             send_telegram("☀️ Good Morning Traders! ඔයාලා හැමෝටම ජයග්‍රාහී සුබ දවසක් වේවා! 🚀"); st.session_state.sent_morning = True; save_full_state()
         if current_time.hour >= END_HOUR and not st.session_state.sent_goodbye:
             if st.session_state.daily_count > 0: msg = "🚀 Good Bye Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋"
-            else: msg = "🛑 **Market Update:** අද Market එකේ High Probability Setups තිබුනේ නෑ (Choppy Market). 📉\n\nහෙට අලුත් දවසකින් හමුවෙමු! Good Night Traders! 👋"
+            else: msg = "أද Market එකේ High Probability Setups තිබුනේ නෑ (Choppy Market). 📉\n\nහෙට අලුත් දවසකින් හමුවෙමු! Good Night Traders! 👋"
             send_telegram(msg); st.session_state.sent_goodbye = True; save_full_state()
         if st.session_state.daily_count >= MAX_DAILY_SIGNALS: st.warning("🛑 Daily Limit Reached. Sleeping..."); time.sleep(60); st.rerun()
         elif is_within_hours:
@@ -444,7 +441,6 @@ with tab1:
                 run_scan(); st.session_state.force_scan = False; st.rerun()
             else:
                 next_min = 15 - (current_time.minute % 15)
-                # Show persistent log during wait
                 if st.session_state.scan_log: st.markdown(f"#### 📝 Last Scan Scores:\n{st.session_state.scan_log}")
                 st.info(f"⏳ **Monitoring...** (Next scan in {next_min} mins)"); time.sleep(5); st.rerun()
         else:
