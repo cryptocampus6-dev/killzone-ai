@@ -7,6 +7,7 @@ import pytz
 import os
 import json
 import yfinance as yf
+import numpy as np
 from datetime import datetime
 
 # --- USER SETTINGS ---
@@ -60,28 +61,26 @@ def send_telegram(msg, is_sticker=False):
         else: requests.post(url + "sendMessage", data={"chat_id": CHANNEL_ID, "text": msg, "parse_mode": "HTML"})
     except: pass
 
-# --- DATA FETCHING (YAHOO FINANCE - 100% STABLE) ---
+# --- DATA FETCHING (YAHOO FINANCE) ---
 def get_data(symbol, limit=200):
     try:
-        # Convert crypto symbol to Yahoo Finance format (e.g., BTC -> BTC-USD)
         ticker = f"{symbol}-USD"
-        
-        # Download data (15m interval, last 5 days to get enough data)
         df = yf.download(ticker, period="5d", interval="15m", progress=False)
         
         if not df.empty:
-            # Clean and format dataframe
             df = df.reset_index()
-            df.columns = df.columns.droplevel(1) if isinstance(df.columns, pd.MultiIndex) else df.columns
+            # Multi-index fix
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.droplevel(1)
+            
             df = df.rename(columns={'Datetime': 'timestamp', 'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume'})
             return df
-            
-    except Exception as e:
+    except: 
         return pd.DataFrame()
     return pd.DataFrame()
 
 # ==============================================================================
-# 🧠 TRADING BIBLE LOGIC (5 METHODS - FULLY IMPLEMENTED)
+# 🧠 TRADING BIBLE LOGIC (5 METHODS)
 # ==============================================================================
 
 def analyze_ultimate(df, coin_name):
@@ -99,39 +98,29 @@ def analyze_ultimate(df, coin_name):
     score = 50 
 
     # --- 1. FUNDAMENTALS (Volatility Check) ---
-    # If High-Low range is > 3.5x ATR, assume News/Shock
     if (curr['high'] - curr['low']) > (curr['atr'] * 3.5):
         return "NEUTRAL", 0, 0, 0, 0, 0, ["NEWS SHOCK"]
     
-    # Whale Volume Check
     avg_vol = df['volume'].rolling(20).mean().iloc[-1]
     is_whale = curr['volume'] > (avg_vol * 3.0)
     if is_whale: methods_hit.append("Whale Vol")
 
     # --- 2. HTF TREND & MSNR (QML) ---
-    # Using EMA200 as HTF proxy
     trend = "BULL" if curr['close'] > curr['ema200'] else "BEAR"
     
-    # Swing Points for QML
-    l = df['low']
-    h = df['high']
+    l = df['low']; h = df['high']
     swing_lows = l[(l.shift(1) > l) & (l.shift(-1) > l)].tail(3).values
     swing_highs = h[(h.shift(1) < h) & (h.shift(-1) < h)].tail(3).values
     
-    qml_bull = False
-    qml_bear = False
+    qml_bull = False; qml_bear = False
     
     if len(swing_lows) >= 2 and len(swing_highs) >= 2:
-        # Bearish QML: Higher High then Lower Low
         if swing_highs[1] > swing_highs[0] and curr['close'] < swing_lows[1]: qml_bear = True
-        # Bullish QML: Lower Low then Higher High
         if swing_lows[1] < swing_lows[0] and curr['close'] > swing_highs[1]: qml_bull = True
 
     # --- 3. LIQUIDITY (SWEEP) ---
-    # Wick Sweep Logic
     prev_low = df['low'].iloc[-10:-1].min()
     prev_high = df['high'].iloc[-10:-1].max()
-    
     sweep_bull = (curr['low'] < prev_low) and (curr['close'] > prev_low)
     sweep_bear = (curr['high'] > prev_high) and (curr['close'] < prev_high)
     
@@ -139,15 +128,13 @@ def analyze_ultimate(df, coin_name):
     if sweep_bear: methods_hit.append("Liq Sweep")
 
     # --- 4. ICT (FVG & Time) ---
-    # FVG
     fvg_bull = (df['low'].shift(2) > df['high']).iloc[-1]
     fvg_bear = (df['high'].shift(2) < df['low']).iloc[-1]
     
-    # Killzones
     utc_h = datetime.now(pytz.utc).hour
     killzone = (7 <= utc_h <= 10) or (12 <= utc_h <= 16)
 
-    # --- 5. PRICE ACTION (Trigger) ---
+    # --- 5. PRICE ACTION ---
     engulf_bull = (curr['close'] > curr['open']) and (prev['close'] < prev['open']) and (curr['close'] > prev['high'])
     engulf_bear = (curr['close'] < curr['open']) and (prev['close'] > prev['open']) and (curr['close'] < prev['low'])
 
@@ -179,14 +166,13 @@ def analyze_ultimate(df, coin_name):
         sig = "SHORT"
         final_score = min(100 - score, 100)
 
-    # SL
     sl_long = curr['low'] * 0.99
     sl_short = curr['high'] * 1.01
 
     return sig, final_score, curr['close'], curr['atr'], sl_long, sl_short, methods_hit
 
 # ==============================================================================
-# MAIN APP LOOP (ORIGINAL UI PRESERVED)
+# MAIN APP LOOP
 # ==============================================================================
 
 saved_data = load_data()
@@ -198,7 +184,7 @@ if 'coins' not in st.session_state:
 if 'scan_log' not in st.session_state: st.session_state.scan_log = ""
 if 'force_scan' not in st.session_state: st.session_state.force_scan = False
 
-# SIDEBAR (Exact Copy of Old Code)
+# SIDEBAR
 st.sidebar.title("🎛️ Control Panel")
 coins_list = st.session_state.coins
 current_time = datetime.now(lz)
@@ -274,18 +260,16 @@ def run_scan():
         try:
             status_area.markdown(f"👀 **Checking:** `{coin}` ...")
             
-            # --- FETCH DATA ---
             df = get_data(coin)
             
             if df.empty:
                 st.session_state.scan_log = f"`{coin}`: ⚠️ No Data | " + st.session_state.scan_log
                 live_log.markdown(f"#### 📝 Live Scores:\n{st.session_state.scan_log}")
-                time.sleep(0.5) 
+                time.sleep(0.2)
                 continue 
 
             sig, score, price, atr, sl_long, sl_short, methods = analyze_ultimate(df, coin)
             
-            # Color Fix for "White" issue
             if score >= 85: score_color = "green"
             elif score <= 15: score_color = "red"
             else: score_color = "orange"
@@ -296,7 +280,7 @@ def run_scan():
             if len(st.session_state.scan_log) > 2000: st.session_state.scan_log = st.session_state.scan_log[:2000]
             live_log.markdown(f"#### 📝 Live Scores:\n{st.session_state.scan_log}")
             
-            time.sleep(1.5) # Speed control
+            time.sleep(0.5)
 
             if sig != "NEUTRAL":
                 if st.session_state.daily_count < MAX_DAILY_SIGNALS:
@@ -330,11 +314,8 @@ def run_scan():
                     roi_3 = round(abs(tps[2]-price)/price*100*dynamic_leverage, 1)
                     roi_4 = round(abs(tps[3]-price)/price*100*dynamic_leverage, 1)
                     sl_roi = round(abs(price-sl)/price*100*dynamic_leverage, 1)
-                    
-                    methods_str = ", ".join(methods)
                     p_fmt = ".8f" if price < 1 else ".2f"
 
-                    # --- FIXED MESSAGE FORMAT (Syntax Error Fixed) ---
                     msg = (
                         f"💎<b>CRYPTO CAMPUS VIP</b>💎\n\n"
                         f"🌑 <b>{coin} USDT</b>\n\n"
@@ -353,7 +334,7 @@ def run_scan():
                     )
                     
                     send_telegram(msg)
-                    st.session_state.history.insert(0, {"Time": current_time.strftime("%H:%M"), "Coin": coin, "Signal": sig, "Methods": methods_str})
+                    st.session_state.history.insert(0, {"Time": current_time.strftime("%H:%M"), "Coin": coin, "Signal": sig, "Methods": ", ".join(methods)})
                     st.session_state.daily_count += 1
                     st.session_state.signaled_coins.append(coin)
                     save_full_state()
@@ -366,7 +347,7 @@ def run_scan():
         except Exception as e:
             st.session_state.scan_log = f"`{coin}`: ⚠️ Error | " + st.session_state.scan_log
             live_log.markdown(f"#### 📝 Live Scores:\n{st.session_state.scan_log}")
-            time.sleep(1)
+            time.sleep(0.5)
         
         progress_bar.progress((i + 1) / len(coins_list))
     
@@ -397,9 +378,8 @@ with tab1:
                 run_scan(); st.session_state.force_scan = False; st.rerun()
             else:
                 next_min = 15 - (current_time.minute % 15)
-                # Show last log
-                if 'scan_log' in st.session_state and st.session_state.scan_log:
-                    st.markdown(f"#### 📝 Last Scan Scores:\n{st.session_state.scan_log}")
+                # Show Last Log
+                if st.session_state.scan_log: st.markdown(f"#### 📝 Last Scan Scores:\n{st.session_state.scan_log}")
                 st.info(f"⏳ **Monitoring...** (Next scan in {next_min} mins)")
                 time.sleep(5); st.rerun()
         else:
