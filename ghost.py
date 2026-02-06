@@ -89,13 +89,18 @@ def send_telegram(msg, is_sticker=False):
         return True
     except: return False
 
-# --- ROBUST DATA FETCHING (BINANCE PRIMARY -> MEXC FALLBACK) ---
+# --- ROBUST DATA FETCHING (TRIPLE ENGINE) ---
 def get_data(symbol, limit=200, timeframe='15m'):
-    # 1. Try Binance First (Most reliable for Cloud IPs)
+    # Header to mimic a browser
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+
+    # 1. Try Binance US (Works in USA/Streamlit Cloud)
     try:
-        url = "https://api.binance.com/api/v3/klines"
+        url = "https://api.binance.us/api/v3/klines"
         params = {'symbol': symbol, 'interval': timeframe, 'limit': limit}
-        response = requests.get(url, params=params, timeout=5)
+        response = requests.get(url, params=params, headers=headers, timeout=5)
         data = response.json()
         
         if isinstance(data, list) and len(data) > 0:
@@ -104,14 +109,12 @@ def get_data(symbol, limit=200, timeframe='15m'):
             cols = ['open', 'high', 'low', 'close', 'volume']
             df[cols] = df[cols].apply(pd.to_numeric, errors='coerce')
             return df
-    except:
-        pass # If Binance fails, silently move to MEXC
+    except: pass
 
-    # 2. Try MEXC as Backup
+    # 2. Try MEXC (With Browser Headers)
     try:
         url = "https://api.mexc.com/api/v3/klines"
         params = {'symbol': symbol, 'interval': timeframe, 'limit': limit}
-        headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.get(url, params=params, headers=headers, timeout=5)
         data = response.json()
 
@@ -121,10 +124,30 @@ def get_data(symbol, limit=200, timeframe='15m'):
             cols = ['open', 'high', 'low', 'close', 'volume']
             df[cols] = df[cols].apply(pd.to_numeric, errors='coerce')
             return df
-    except:
-        pass
+    except: pass
 
-    return pd.DataFrame() # Return empty if both fail
+    # 3. Try Kraken (Public API - Very Permissive)
+    try:
+        # Kraken symbols are weird (e.g. XBTUSDT), so this is a last resort fallback for standard pairs
+        kraken_sym = symbol.replace("BTC", "XBT") if symbol.startswith("BTC") else symbol
+        url = "https://api.kraken.com/0/public/OHLC"
+        params = {'pair': kraken_sym, 'interval': 15} # 15 min
+        response = requests.get(url, params=params, headers=headers, timeout=5)
+        data = response.json()
+        
+        if 'result' in data:
+            key = list(data['result'].keys())[0]
+            k_data = data['result'][key]
+            # Take last 'limit' candles
+            k_data = k_data[-limit:]
+            df = pd.DataFrame(k_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'vwap', 'volume', 'count'])
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
+            cols = ['open', 'high', 'low', 'close', 'volume']
+            df[cols] = df[cols].apply(pd.to_numeric, errors='coerce')
+            return df
+    except: pass
+
+    return pd.DataFrame()
 
 # ==============================================================================
 # 🧠 100% IMPLEMENTATION OF "THE TRADING BIBLE"
@@ -161,8 +184,6 @@ def analyze_ict(df):
     sweep_low = (df['low'] < prev_low) & (df['close'] > prev_low)
 
     bearish_ob = (df['close'].shift(1) > df['open'].shift(1)) and (df['close'] < df['open']) and (df['close'] < df['low'].shift(1))
-    
-    # FIXED: The line that was broken before is now corrected below
     bullish_ob = (df['close'].shift(1) < df['open'].shift(1)) and (df['close'] > df['open']) and (df['close'] > df['high'].shift(1))
 
     ny_time = datetime.now(pytz.timezone('America/New_York'))
