@@ -61,117 +61,114 @@ def send_telegram(msg, is_sticker=False):
         else: requests.post(url + "sendMessage", data={"chat_id": CHANNEL_ID, "text": msg, "parse_mode": "HTML"})
     except: pass
 
-# --- DATA FETCHING (YAHOO FINANCE) ---
+# --- DATA FETCHING (STABLE) ---
 def get_data(symbol, limit=200):
     try:
         ticker = f"{symbol}-USD"
         df = yf.download(ticker, period="5d", interval="15m", progress=False)
-        
         if not df.empty:
             df = df.reset_index()
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.droplevel(1)
-            
+            if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.droplevel(1)
             df = df.rename(columns={'Datetime': 'timestamp', 'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume'})
             return df
-    except: 
-        return pd.DataFrame()
+    except: return pd.DataFrame()
     return pd.DataFrame()
 
 # ==============================================================================
-# 🧠 TRADING BIBLE LOGIC (5 METHODS - 100% INCLUDED)
+# 🧠 NEW STRATEGY: HEIKIN-ASHI + SUPERTREND + ADX (Bot Optimized)
 # ==============================================================================
 
 def analyze_ultimate(df, coin_name):
     if df.empty or len(df) < 50: return "NEUTRAL", 0, 0, 0, 0, 0, []
 
-    # Indicators
-    df['atr'] = ta.atr(df['high'], df['low'], df['close'], 14)
-    df['ema200'] = ta.ema(df['close'], 200)
-    df['rsi'] = ta.rsi(df['close'], 14)
+    # 1. Calculate Heikin-Ashi Candles
+    df_ha = df.copy()
+    df_ha['ha_close'] = (df['open'] + df['high'] + df['low'] + df['close']) / 4
     
+    # Initialize HA Open (First candle = regular open)
+    ha_open = [df['open'].iloc[0]]
+    for i in range(1, len(df)):
+        ha_open.append((ha_open[-1] + df_ha['ha_close'].iloc[i-1]) / 2)
+    df_ha['ha_open'] = ha_open
+    
+    # 2. Indicators (SuperTrend & ADX & ATR)
+    # SuperTrend (Length=10, Multiplier=3)
+    supertrend = ta.supertrend(df['high'], df['low'], df['close'], length=10, multiplier=3)
+    # Extract the direction column (1 = Uptrend, -1 = Downtrend)
+    st_dir_col = supertrend.columns[1] 
+    df = pd.concat([df, supertrend], axis=1)
+    
+    # ADX (Trend Strength)
+    adx = ta.adx(df['high'], df['low'], df['close'], length=14)
+    df = pd.concat([df, adx], axis=1)
+    
+    # ATR (For Stop Loss)
+    df['atr'] = ta.atr(df['high'], df['low'], df['close'], 14)
+
+    # Get Current Values
     curr = df.iloc[-1]
-    prev = df.iloc[-2]
+    curr_ha_close = df_ha['ha_close'].iloc[-1]
+    curr_ha_open = df_ha['ha_open'].iloc[-1]
+    curr_st_dir = curr[st_dir_col] # 1 or -1
+    curr_adx = curr['ADX_14']
     
     methods_hit = []
     score = 50 
 
-    # --- 1. FUNDAMENTALS (Volatility & Whale Check) ---
-    if (curr['high'] - curr['low']) > (curr['atr'] * 3.5):
-        return "NEUTRAL", 0, 0, 0, 0, 0, ["NEWS SHOCK"]
+    # --- STRATEGY LOGIC ---
     
+    # Check 1: Heikin-Ashi Color
+    ha_green = curr_ha_close > curr_ha_open
+    ha_red = curr_ha_close < curr_ha_open
+    
+    # Check 2: SuperTrend Direction
+    st_bull = curr_st_dir == 1
+    st_bear = curr_st_dir == -1
+    
+    # Check 3: Trend Strength (ADX)
+    strong_trend = curr_adx > 25
+    
+    # Check 4: Momentum (Volume > Avg)
     avg_vol = df['volume'].rolling(20).mean().iloc[-1]
-    is_whale = curr['volume'] > (avg_vol * 3.0)
-    if is_whale: methods_hit.append("Whale Vol")
-
-    # --- 2. MALAYSIAN SNR (HTF Trend & QML) ---
-    trend = "BULL" if curr['close'] > curr['ema200'] else "BEAR"
-    
-    l = df['low']; h = df['high']
-    swing_lows = l[(l.shift(1) > l) & (l.shift(-1) > l)].tail(3).values
-    swing_highs = h[(h.shift(1) < h) & (h.shift(-1) < h)].tail(3).values
-    
-    qml_bull = False; qml_bear = False
-    
-    if len(swing_lows) >= 2 and len(swing_highs) >= 2:
-        if swing_highs[1] > swing_highs[0] and curr['close'] < swing_lows[1]: qml_bear = True
-        if swing_lows[1] < swing_lows[0] and curr['close'] > swing_highs[1]: qml_bull = True
-
-    # --- 3. LIQUIDITY (SWEEP) ---
-    prev_low = df['low'].iloc[-10:-1].min()
-    prev_high = df['high'].iloc[-10:-1].max()
-    sweep_bull = (curr['low'] < prev_low) and (curr['close'] > prev_low)
-    sweep_bear = (curr['high'] > prev_high) and (curr['close'] < prev_high)
-    
-    if sweep_bull: methods_hit.append("Liq Sweep")
-    if sweep_bear: methods_hit.append("Liq Sweep")
-
-    # --- 4. ICT (FVG & Time) ---
-    fvg_bull = (df['low'].shift(2) > df['high']).iloc[-1]
-    fvg_bear = (df['high'].shift(2) < df['low']).iloc[-1]
-    
-    utc_h = datetime.now(pytz.utc).hour
-    killzone = (7 <= utc_h <= 10) or (12 <= utc_h <= 16)
-
-    # --- 5. PRICE ACTION ---
-    engulf_bull = (curr['close'] > curr['open']) and (prev['close'] < prev['open']) and (curr['close'] > prev['high'])
-    engulf_bear = (curr['close'] < curr['open']) and (prev['close'] > prev['open']) and (curr['close'] < prev['low'])
+    good_vol = curr['volume'] > avg_vol
 
     # --- SCORING ---
-    if trend == "BULL":
-        score += 10
-        if qml_bull: score += 20; methods_hit.append("QML")
-        if sweep_bull: score += 20
-        if fvg_bull: score += 15; methods_hit.append("FVG")
-        if engulf_bull: score += 15; methods_hit.append("Engulfing")
-        if killzone: score += 5
     
-    elif trend == "BEAR":
-        score -= 10
-        if qml_bear: score -= 20; methods_hit.append("QML")
-        if sweep_bear: score -= 20
-        if fvg_bear: score -= 15; methods_hit.append("FVG")
-        if engulf_bear: score -= 15; methods_hit.append("Engulfing")
-        if killzone: score -= 5
+    if st_bull: # SuperTrend says UP
+        score += 20
+        if ha_green: score += 20; methods_hit.append("HA Bull")
+        if strong_trend: score += 20; methods_hit.append("ADX > 25")
+        if good_vol: score += 10; methods_hit.append("Volume")
+        # Bonus: Price above EMA 200
+        if curr['close'] > ta.ema(df['close'], 200).iloc[-1]: score += 10; methods_hit.append("Trend")
+        
+    elif st_bear: # SuperTrend says DOWN
+        score -= 20
+        if ha_red: score -= 20; methods_hit.append("HA Bear")
+        if strong_trend: score -= 20; methods_hit.append("ADX > 25")
+        if good_vol: score -= 10; methods_hit.append("Volume")
+        # Bonus: Price below EMA 200
+        if curr['close'] < ta.ema(df['close'], 200).iloc[-1]: score -= 10; methods_hit.append("Trend")
 
     # FINAL SIGNAL
     sig = "NEUTRAL"
     final_score = score
     
-    if score >= SCORE_THRESHOLD:
+    if score >= 85:
         sig = "LONG"
         final_score = min(score, 100)
-    elif score <= (100 - SCORE_THRESHOLD):
+    elif score <= 15:
         sig = "SHORT"
         final_score = min(100 - score, 100)
 
-    sl_long = curr['low'] * 0.99
-    sl_short = curr['high'] * 1.01
+    # SL Calculation (ATR Based - Dynamic)
+    sl_long = curr['close'] - (curr['atr'] * 2.0) # Slightly wider SL for Swing
+    sl_short = curr['close'] + (curr['atr'] * 2.0)
 
     return sig, final_score, curr['close'], curr['atr'], sl_long, sl_short, methods_hit
 
 # ==============================================================================
-# MAIN APP LOOP
+# MAIN APP LOOP (UNCHANGED UI & TELEGRAM FORMAT)
 # ==============================================================================
 
 saved_data = load_data()
@@ -213,14 +210,12 @@ if col2.button("⏹️ STOP"): st.session_state.bot_active = False; save_full_st
 st.sidebar.markdown("---")
 if st.sidebar.button("⚡ FORCE SCAN NOW"): st.session_state.force_scan = True; st.rerun()
 
-# --- NEW RESET BUTTON ---
 if st.sidebar.button("🔄 RESET LIMIT (Admin)"):
     st.session_state.daily_count = 0
     st.session_state.signaled_coins = []
     st.session_state.sent_goodbye = False
     save_full_state()
     st.rerun()
-# ------------------------
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("🪙 Coin Manager")
@@ -288,7 +283,7 @@ def run_scan():
             if len(st.session_state.scan_log) > 2000: st.session_state.scan_log = st.session_state.scan_log[:2000]
             live_log.markdown(f"#### 📝 Live Scores:\n{st.session_state.scan_log}")
             
-            time.sleep(0.5)
+            time.sleep(0.5) 
 
             if sig != "NEUTRAL":
                 if st.session_state.daily_count < MAX_DAILY_SIGNALS:
@@ -371,7 +366,7 @@ with tab1:
             if st.session_state.daily_count > 0:
                 msg = "🚀 Good Bye Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋"
             else:
-                msg = "අද Market එකේ අපේ Strategy එකට ගැලපෙන High Probability Setups තිබුනේ නෑ (Choppy Market). 📉\n\nබොරු Trades දාලා Loss කරගන්නවට වඩා, ඉවසීමෙන් Capital එක ආරක්ෂා කරගන්න එක තමයි Professional Trading කියන්නේ. 🧠💎\n\nහෙට අලුත් දවසකින් හමුවෙමු! Good Night Traders! 👋"
+                msg = "🛑 **Market Update:** අද Market එකේ අපේ Strategy එකට ගැලපෙන High Probability Setups තිබුනේ නෑ (Choppy Market). 📉\n\nබොරු Trades දාලා Loss කරගන්නවට වඩා, ඉවසීමෙන් Capital එක ආරක්ෂා කරගන්න එක තමයි Professional Trading කියන්නේ. 🧠💎\n\nහෙට අලුත් දවසකින් හමුවෙමු! Good Night Traders! 👋"
             send_telegram(msg); st.session_state.sent_goodbye = True; save_full_state()
 
         if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
