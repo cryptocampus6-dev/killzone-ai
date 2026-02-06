@@ -14,223 +14,249 @@ TELEGRAM_BOT_TOKEN = "8524773131:AAG7YAYrzt9HYu34UhUJ0af_TDamhyndBas"
 CHANNEL_ID = "-1003731551541"
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWlMq--iOTVBE4BA"
 
-# --- TIME SETTINGS ---
-START_HOUR = 7    
-END_HOUR = 21     
-MAX_DAILY_SIGNALS = 8 
-
-# --- METHOD CONFIG ---
-SCORE_THRESHOLD = 85   
-
-# --- DYNAMIC SETTINGS ---
-MAX_LEVERAGE = 50  
-TARGET_SL_ROI = 60 
-
-DATA_FILE = "bot_data.json" 
+# --- CONFIGURATION ---
+START_HOUR = 7
+END_HOUR = 21
+MAX_DAILY_SIGNALS = 8
+SCORE_THRESHOLD = 85
+TARGET_SL_ROI = 60
+DATA_FILE = "bot_data.json"
 
 st.set_page_config(page_title="Ghost Protocol Dashboard", page_icon="👻", layout="wide")
 lz = pytz.timezone('Asia/Colombo')
 
-# --- ADVANCED MEMORY SYSTEM (JSON) ---
+# --- DATA MANAGEMENT ---
 def load_data():
-    default_data = {
-        "bot_active": True,
-        "daily_count": 0,
-        "last_reset_date": datetime.now(lz).strftime("%Y-%m-%d"),
-        "signaled_coins": [],
-        "history": [],
-        "last_scan_block_id": -1,
-        "sent_morning": False,
-        "sent_goodbye": False
+    default = {
+        "bot_active": True, "daily_count": 0, "last_reset_date": datetime.now(lz).strftime("%Y-%m-%d"),
+        "signaled_coins": [], "history": [], "last_scan_block_id": -1,
+        "sent_morning": False, "sent_goodbye": False
     }
-    
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r") as f:
                 data = json.load(f)
+                # DAILY RESET LOGIC
+                if data.get("last_reset_date") != datetime.now(lz).strftime("%Y-%m-%d"):
+                    data["daily_count"] = 0
+                    data["signaled_coins"] = []
+                    data["last_reset_date"] = datetime.now(lz).strftime("%Y-%m-%d")
+                    data["sent_morning"] = False
+                    data["sent_goodbye"] = False
+                    with open(DATA_FILE, "w") as fw: json.dump(data, fw)
                 return data
-        except:
-            return default_data
-    return default_data
-
-def save_data(key, value):
-    current_data = load_data()
-    current_data[key] = value
-    with open(DATA_FILE, "w") as f:
-        json.dump(current_data, f)
+        except: return default
+    return default
 
 def save_full_state():
-    data_to_save = {
-        "bot_active": st.session_state.bot_active,
-        "daily_count": st.session_state.daily_count,
-        "last_reset_date": st.session_state.last_reset_date,
-        "signaled_coins": st.session_state.signaled_coins,
-        "history": st.session_state.history,
-        "last_scan_block_id": st.session_state.last_scan_block_id,
-        "sent_morning": st.session_state.sent_morning,
-        "sent_goodbye": st.session_state.sent_goodbye
+    data = {
+        "bot_active": st.session_state.bot_active, "daily_count": st.session_state.daily_count,
+        "last_reset_date": st.session_state.last_reset_date, "signaled_coins": st.session_state.signaled_coins,
+        "history": st.session_state.history, "last_scan_block_id": st.session_state.last_scan_block_id,
+        "sent_morning": st.session_state.sent_morning, "sent_goodbye": st.session_state.sent_goodbye
     }
-    with open(DATA_FILE, "w") as f:
-        json.dump(data_to_save, f)
+    with open(DATA_FILE, "w") as f: json.dump(data, f)
 
-# --- TELEGRAM FUNCTION ---
+# --- TELEGRAM ---
 def send_telegram(msg, is_sticker=False):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/"
     try:
-        if is_sticker:
-            requests.post(url + "sendSticker", data={"chat_id": CHANNEL_ID, "sticker": STICKER_ID})
-        else:
-            requests.post(url + "sendMessage", data={"chat_id": CHANNEL_ID, "text": msg, "parse_mode": "HTML"})
-        return True
-    except: return False
+        if is_sticker: requests.post(url + "sendSticker", data={"chat_id": CHANNEL_ID, "sticker": STICKER_ID})
+        else: requests.post(url + "sendMessage", data={"chat_id": CHANNEL_ID, "text": msg, "parse_mode": "HTML"})
+    except: pass
 
-# --- ROBUST DATA FETCHING (FIXED NO DATA ISSUE) ---
-def get_data(symbol, limit=200, timeframe='15m'):
+# --- ROBUST DATA FETCHING ---
+def get_data(symbol, timeframe='15m', limit=300):
     headers = {"User-Agent": "Mozilla/5.0"}
-    # Try Binance US first (Works on Cloud)
+    # 1. Binance US
     try:
         url = "https://api.binance.us/api/v3/klines"
-        params = {'symbol': symbol.replace('/', '').replace(':USDT', ''), 'interval': timeframe, 'limit': limit}
-        response = requests.get(url, params=params, headers=headers, timeout=5)
-        data = response.json()
-        if isinstance(data, list):
-            df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'c', 'q', 'n', 'tb', 'tq', 'i'])
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            cols = ['open', 'high', 'low', 'close', 'volume']
-            df[cols] = df[cols].apply(pd.to_numeric, errors='coerce')
+        sym = symbol.replace('/', '').replace(':USDT', '')
+        res = requests.get(url, params={'symbol': sym, 'interval': timeframe, 'limit': limit}, headers=headers, timeout=5)
+        if res.status_code == 200:
+            df = pd.DataFrame(res.json(), columns=['ts','o','h','l','c','v','ct','qa','nt','tb','tq','i'])
+            df[['o','h','l','c','v']] = df[['o','h','l','c','v']].apply(pd.to_numeric)
             return df
     except: pass
-
-    # Fallback to MEXC
+    # 2. MEXC Fallback
     try:
         url = "https://api.mexc.com/api/v3/klines"
-        symbol_mexc = symbol.replace('/', '').replace(':USDT', '')
-        params = {'symbol': symbol_mexc, 'interval': timeframe, 'limit': limit}
-        response = requests.get(url, params=params, headers=headers, timeout=5)
-        data = response.json()
-        if isinstance(data, list):
-            df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'c', 'q', 'n', 'tb', 'tq', 'i'])
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            cols = ['open', 'high', 'low', 'close', 'volume']
-            df[cols] = df[cols].apply(pd.to_numeric, errors='coerce')
+        sym = symbol.replace('/', '').replace(':USDT', '')
+        res = requests.get(url, params={'symbol': sym, 'interval': timeframe, 'limit': limit}, headers=headers, timeout=5)
+        if res.status_code == 200:
+            df = pd.DataFrame(res.json(), columns=['ts','o','h','l','c','v','ct','qa','nt','tb','tq','i'])
+            df[['o','h','l','c','v']] = df[['o','h','l','c','v']].apply(pd.to_numeric)
             return df
     except: pass
-    
     return pd.DataFrame()
 
-# --- METHOD 9: NEWS IMPACT CHECK ---
-def check_news_impact(btc_df):
-    if btc_df.empty: return False
-    curr = btc_df.iloc[-1]
-    # Simple ATR based Volatility Check
-    tr = max(curr['high'] - curr['low'], abs(curr['high'] - curr['open']))
-    if tr > (curr['open'] * 0.02): return True 
-    return False
-
 # ==============================================================================
-# 🧠 NEW ULTIMATE LOGIC (REPLACING THE OLD 13 METHODS)
+# 🧠 THE "TRADING BIBLE" LOGIC (ALL 5 METHODS INTEGRATED)
 # ==============================================================================
 
-# --- A. MALAYSIAN SNR: QML ---
-def detect_qml(df):
-    df['swing_high'] = df['high'][(df['high'].shift(1) < df['high']) & (df['high'].shift(-1) < df['high'])]
-    df['swing_low'] = df['low'][(df['low'].shift(1) > df['low']) & (df['low'].shift(-1) > df['low'])]
+def analyze_bible_logic(coin):
+    # Fetch Data (HTF for Trend/Structure, LTF for Entry)
+    df_4h = get_data(f"{coin}USDT", '4h', 100)
+    df_15m = get_data(f"{coin}USDT", '15m', 300)
     
-    last_highs = df['swing_high'].dropna().tail(2).values
-    last_lows = df['swing_low'].dropna().tail(2).values
-    
-    qml_bearish, qml_bullish = False, False
-    
-    if len(last_highs) >= 2 and len(last_lows) >= 2:
-        if last_highs[1] > last_highs[0] and df['close'].iloc[-1] < last_lows[1]: qml_bearish = True
-        if last_lows[1] < last_lows[0] and df['close'].iloc[-1] > last_highs[1]: qml_bullish = True
-            
-    return qml_bullish, qml_bearish
+    if df_4h.empty or df_15m.empty: return "NEUTRAL", 0, 0, 0, 0, 0, []
 
-# --- B. ICT & C. CRT ---
-def detect_ict_crt(df):
-    bullish_fvg = (df['low'].shift(2) > df['high']) 
-    bearish_fvg = (df['high'].shift(2) < df['low'])
+    # --- 0. PRE-CALCULATIONS ---
+    df_15m['atr'] = ta.atr(df_15m['h'], df_15m['l'], df_15m['c'], 14)
+    df_15m['ema200'] = ta.ema(df_15m['c'], 200)
+    df_15m['rsi'] = ta.rsi(df_15m['c'], 14)
     
-    ref_high = df['high'].shift(5)
-    ref_low = df['low'].shift(5)
+    curr = df_15m.iloc[-1]
+    prev = df_15m.iloc[-2]
     
-    body_break_up = df['close'].iloc[-1] > ref_high.iloc[-1]
-    body_break_down = df['close'].iloc[-1] < ref_low.iloc[-1]
-    
-    return bullish_fvg.iloc[-1], bearish_fvg.iloc[-1], body_break_up, body_break_down
-
-# --- MASTER ANALYSIS FUNCTION (Keeping Old Signature) ---
-def analyze_ultimate(df, coin_name):
-    if df.empty or len(df) < 50: return "NEUTRAL", 0, 0, 0, 0, 0, []
-
-    # Indicators for return
-    df['atr'] = ta.atr(df['high'], df['low'], df['close'], 14)
-    curr = df.iloc[-1]
-    
-    # 2. Killzones
-    current_hour = datetime.now(pytz.utc).hour
-    is_killzone = (7 <= current_hour <= 17) or (12 <= current_hour <= 22)
-
-    # 3. Run Methods
-    qml_buy, qml_sell = detect_qml(df)
-    fvg_buy, fvg_sell, crt_buy, crt_sell = detect_ict_crt(df)
-
     methods_hit = []
-    
-    # --- BUY SCORE ---
-    buy_score = 0
-    if qml_buy: buy_score += 35; methods_hit.append("QML Buy")
-    if fvg_buy: buy_score += 25; methods_hit.append("ICT FVG")
-    if crt_buy: buy_score += 20; methods_hit.append("Body Break")
-    if is_killzone: buy_score += 10
-    
-    # --- SELL SCORE ---
-    sell_score = 0
-    if qml_sell: sell_score += 35; methods_hit.append("QML Sell")
-    if fvg_sell: sell_score += 25; methods_hit.append("ICT FVG")
-    if crt_sell: sell_score += 20; methods_hit.append("Body Break")
-    if is_killzone: sell_score += 10
+    score = 50 # Start Neutral
 
-    # Final Signal Determination
-    final_score = 50 
+    # ==========================================================================
+    # 🚀 METHOD 05: FUNDAMENTAL NEWS & SENTIMENT (The Filter)
+    # ==========================================================================
+    # 1. Macro/News Check (Via Volatility Proxy): If ATR explodes, it's News/CPI/FOMC.
+    volatility_shock = (curr['h'] - curr['l']) > (curr['atr'] * 3.5)
+    if volatility_shock:
+        return "NEUTRAL", 0, 0, 0, 0, 0, ["NEWS EVENT (Do Not Trade)"]
+    
+    # 2. Whale Activities (On-Chain Proxy): Sudden Massive Volume spike > 3x Avg
+    avg_vol = df_15m['v'].rolling(20).mean().iloc[-1]
+    is_whale = curr['v'] > (avg_vol * 3.0)
+    if is_whale: methods_hit.append("Whale Volume")
+
+    # 3. Sentiment (Fear & Greed Proxy via RSI)
+    is_extreme_fear = curr['rsi'] < 25 # Oversold (Buy opp)
+    is_extreme_greed = curr['rsi'] > 75 # Overbought (Sell opp)
+
+    # ==========================================================================
+    # 🚀 METHOD 01: MALAYSIAN SNR (Mapping & Setup)
+    # ==========================================================================
+    # HTF Direction (Phase 1)
+    htf_trend = "BULL" if df_4h['c'].iloc[-1] > ta.ema(df_4h['c'], 200).iloc[-1] else "BEAR"
+    
+    # QML Pattern (Phase 2 - Reversal)
+    # High -> Low -> Higher High -> Lower Low (Bearish QML)
+    # Finding swing points
+    l = df_15m['l']
+    h = df_15m['h']
+    
+    # Simple fractal logic for last 4 swings
+    # Note: Complex QML requires looking back ~50 candles. Approximated here.
+    swing_lows = l[(l.shift(1) > l) & (l.shift(-1) > l)].tail(2).values
+    swing_highs = h[(h.shift(1) < h) & (h.shift(-1) < h)].tail(2).values
+    
+    qml_bull = False
+    qml_bear = False
+    
+    if len(swing_lows) >= 2 and len(swing_highs) >= 2:
+        # Bearish QML Logic
+        if swing_highs[1] > swing_highs[0] and curr['c'] < swing_lows[1]:
+            qml_bear = True
+        # Bullish QML Logic
+        if swing_lows[1] < swing_lows[0] and curr['c'] > swing_highs[1]:
+            qml_bull = True
+
+    # ==========================================================================
+    # 🚀 METHOD 02: LIQUIDITY (The Hunt)
+    # ==========================================================================
+    # BSL/SSL Sweep (Phase 2)
+    # Did we wick below a recent low but close above? (Bullish Sweep)
+    recent_low = df_15m['l'].iloc[-10:-1].min()
+    recent_high = df_15m['h'].iloc[-10:-1].max()
+    
+    sweep_bull = (curr['l'] < recent_low) and (curr['c'] > recent_low)
+    sweep_bear = (curr['h'] > recent_high) and (curr['c'] < recent_high)
+    
+    if sweep_bull: methods_hit.append("SSL Sweep")
+    if sweep_bear: methods_hit.append("BSL Sweep")
+
+    # ==========================================================================
+    # 🚀 METHOD 04: ICT (Structure & Time)
+    # ==========================================================================
+    # FVG (Fair Value Gap) - Entry Tool
+    # Bullish FVG: Low of candle[n-2] > High of candle[n] (Logic reversed for current lookup)
+    fvg_bull = (df_15m['l'].shift(2) > df_15m['h']).iloc[-1]
+    fvg_bear = (df_15m['h'].shift(2) < df_15m['l']).iloc[-1]
+    
+    # Premium/Discount (Phase 3)
+    # If RSI < 40 = Discount (Buy), If RSI > 60 = Premium (Sell)
+    is_discount = curr['rsi'] < 45
+    is_premium = curr['rsi'] > 55
+
+    # Kill Zones (Time) - Phase 2
+    utc_hour = datetime.now(pytz.utc).hour
+    # London (7-10 UTC), NY (12-16 UTC)
+    killzone_active = (7 <= utc_hour <= 10) or (12 <= utc_hour <= 16)
+
+    # ==========================================================================
+    # 🚀 METHOD 03: PRICE ACTION (The Trigger)
+    # ==========================================================================
+    # Engulfing Candles
+    engulf_bull = (curr['c'] > curr['o']) and (prev['c'] < prev['o']) and (curr['c'] > prev['h']) and (curr['o'] < prev['l'])
+    engulf_bear = (curr['c'] < curr['o']) and (prev['c'] > prev['o']) and (curr['c'] < prev['l']) and (curr['o'] > prev['h'])
+    
+    # Pinbar (Rejection)
+    body_size = abs(curr['c'] - curr['o'])
+    lower_wick = min(curr['c'], curr['o']) - curr['l']
+    upper_wick = curr['h'] - max(curr['c'], curr['o'])
+    
+    pinbar_bull = lower_wick > (body_size * 2) and upper_wick < body_size
+    pinbar_bear = upper_wick > (body_size * 2) and lower_wick < body_size
+
+    # ==========================================================================
+    # ⚖️ SCORING SYSTEM (CONFLUENCE CALCULATOR)
+    # ==========================================================================
+    
+    # --- LONG SCORING ---
+    if htf_trend == "BULL":
+        score += 10 # Follow Trend
+        if qml_bull: score += 25; methods_hit.append("QML Reversal")
+        if sweep_bull: score += 20; methods_hit.append("Liquidity Raid")
+        if fvg_bull: score += 15; methods_hit.append("ICT FVG")
+        if is_discount: score += 5; methods_hit.append("Discount Zone")
+        if engulf_bull or pinbar_bull: score += 15; methods_hit.append("PA Trigger")
+        if killzone_active: score += 10; methods_hit.append("Killzone")
+        if is_extreme_fear: score += 10; methods_hit.append("Sent:Fear")
+        if is_whale and curr['c'] > curr['o']: score += 10; methods_hit.append("Whale Buy")
+
+    # --- SHORT SCORING ---
+    elif htf_trend == "BEAR":
+        score -= 10 # Follow Trend
+        if qml_bear: score -= 25; methods_hit.append("QML Reversal")
+        if sweep_bear: score -= 20; methods_hit.append("Liquidity Raid")
+        if fvg_bear: score -= 15; methods_hit.append("ICT FVG")
+        if is_premium: score -= 5; methods_hit.append("Premium Zone")
+        if engulf_bear or pinbar_bear: score -= 15; methods_hit.append("PA Trigger")
+        if killzone_active: score -= 10; methods_hit.append("Killzone")
+        if is_extreme_greed: score -= 10; methods_hit.append("Sent:Greed")
+        if is_whale and curr['c'] < curr['o']: score -= 10; methods_hit.append("Whale Sell")
+
+    # Final Output Logic
     sig = "NEUTRAL"
-
-    if buy_score >= 85:
-        final_score = buy_score if buy_score <= 100 else 99
-        sig = "LONG"
-    elif sell_score >= 85:
-        final_score = 100 - sell_score 
-        if final_score < 0: final_score = 1
-        sig = "SHORT"
-
-    # Calculate SL Levels 
-    swing_low = df['low'].tail(10).min()
-    swing_high = df['high'].tail(10).max()
+    final_score = 50
     
-    sl_long = swing_low * 0.995 
-    sl_short = swing_high * 1.005
+    # BUY THRESHOLD
+    if score >= SCORE_THRESHOLD:
+        sig = "LONG"
+        final_score = min(score, 100)
+    # SELL THRESHOLD (Symmetric)
+    elif score <= (100 - SCORE_THRESHOLD):
+        sig = "SHORT"
+        final_score = min(100 - score, 100) # Convert negative logic to positive score for display
 
-    return sig, final_score, curr['close'], curr['atr'], sl_long, sl_short, methods_hit
+    # Stop Loss & Leverage (Based on ATR for safety)
+    sl_pips = curr['atr'] * 1.5
+    sl_long = curr['l'] - sl_pips
+    sl_short = curr['h'] + sl_pips
+
+    return sig, final_score, curr['c'], curr['atr'], sl_long, sl_short, methods_hit
 
 # ==============================================================================
-# MAIN APP LOOP (UNCHANGED UI - ONLY LOGIC FIXED)
+# MAIN APP LOOP (UNCHANGED UI)
 # ==============================================================================
 
-# --- SESSION STATE INITIALIZATION & RESET FIX ---
 saved_data = load_data()
-current_date_str = datetime.now(lz).strftime("%Y-%m-%d")
-
-# 🔴 FIX: Force Reset if Date Changed
-if saved_data['last_reset_date'] != current_date_str:
-    saved_data['daily_count'] = 0
-    saved_data['signaled_coins'] = []
-    saved_data['last_reset_date'] = current_date_str
-    saved_data['sent_morning'] = False
-    saved_data['sent_goodbye'] = False
-    with open(DATA_FILE, "w") as f:
-        json.dump(saved_data, f)
-
 if 'bot_active' not in st.session_state: st.session_state.bot_active = saved_data['bot_active']
 if 'daily_count' not in st.session_state: st.session_state.daily_count = saved_data['daily_count']
 if 'last_reset_date' not in st.session_state: st.session_state.last_reset_date = saved_data['last_reset_date']
@@ -239,15 +265,6 @@ if 'history' not in st.session_state: st.session_state.history = saved_data['his
 if 'last_scan_block_id' not in st.session_state: st.session_state.last_scan_block_id = saved_data['last_scan_block_id']
 if 'sent_morning' not in st.session_state: st.session_state.sent_morning = saved_data['sent_morning']
 if 'sent_goodbye' not in st.session_state: st.session_state.sent_goodbye = saved_data['sent_goodbye']
-
-# 🔴 FIX: Ensure Session State matches Cleaned Data
-if st.session_state.last_reset_date != current_date_str:
-    st.session_state.daily_count = 0
-    st.session_state.signaled_coins = []
-    st.session_state.last_reset_date = current_date_str
-    st.session_state.sent_morning = False
-    st.session_state.sent_goodbye = False
-    save_full_state()
 
 if 'coins' not in st.session_state:
     st.session_state.coins = [
@@ -265,7 +282,7 @@ if 'coins' not in st.session_state:
     ]
 if 'force_scan' not in st.session_state: st.session_state.force_scan = False
 
-# --- SIDEBAR ---
+# SIDEBAR
 st.sidebar.title("🎛️ Control Panel")
 coins_list = st.session_state.coins
 current_time = datetime.now(lz)
@@ -289,14 +306,11 @@ if st.session_state.signaled_coins:
     st.sidebar.caption(f"Today's Signals: {', '.join(st.session_state.signaled_coins)}")
 
 col1, col2 = st.sidebar.columns(2)
-if col1.button("▶️ START"):
-    st.session_state.bot_active = True; save_full_state(); st.rerun()
-if col2.button("⏹️ STOP"):
-    st.session_state.bot_active = False; save_full_state(); st.rerun()
+if col1.button("▶️ START"): st.session_state.bot_active = True; save_full_state(); st.rerun()
+if col2.button("⏹️ STOP"): st.session_state.bot_active = False; save_full_state(); st.rerun()
 
 st.sidebar.markdown("---")
-if st.sidebar.button("⚡ FORCE SCAN NOW"):
-    st.session_state.force_scan = True; st.rerun()
+if st.sidebar.button("⚡ FORCE SCAN NOW"): st.session_state.force_scan = True; st.rerun()
 st.sidebar.markdown("---")
 
 st.sidebar.subheader("🪙 Coin Manager")
@@ -326,51 +340,49 @@ def run_scan():
     if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
         if not st.session_state.sent_goodbye:
             send_telegram("🚀 Good Bye Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋")
-            st.session_state.sent_goodbye = True
-            save_full_state()
+            st.session_state.sent_goodbye = True; save_full_state()
         st.warning("⚠️ Daily Signal Limit Reached."); return
-
-    try:
-        btc_df = get_data("BTCUSDT", limit=50)
-        if check_news_impact(btc_df):
-            st.error("🚨 HIGH VOLATILITY / NEWS DETECTED! SCAN PAUSED.")
-            return
-    except: pass
 
     st.markdown(f"### 🔄 Scanning {len(coins_list)} Coins...")
     progress_bar = st.progress(0); status_area = st.empty()
     
+    # LIVE LOG
+    log_container = st.container()
+    log_container.write("---")
+    live_log = log_container.empty()
+    scan_log_text = ""
+
     for i, coin in enumerate(coins_list):
         if coin in st.session_state.signaled_coins:
             progress_bar.progress((i + 1) / len(coins_list)); continue
 
         try:
             status_area.markdown(f"👀 **Checking:** `{coin}` ...")
-            
             df = get_data(f"{coin}USDT")
             
             if df.empty:
-                status_area.markdown(f"⚠️ **Error:** `{coin}` (Failed to Fetch Data)")
-                time.sleep(0.5) 
-                continue 
+                scan_log_text = f"`{coin}`: ⚠️ No Data | " + scan_log_text
+                live_log.markdown(f"#### 📝 Live Scores:\n{scan_log_text}")
+                time.sleep(0.1); continue 
 
-            sig, score, price, atr, sl_long, sl_short, methods = analyze_ultimate(df, coin)
+            sig, score, price, atr, sl_long, sl_short, methods = analyze_bible_logic(coin)
             
-            # Color logic for 85 threshold
             score_color = "green" if score >= 85 else "red" if score <= 15 else "orange"
-            
             status_area.markdown(f"👀 **Checked:** `{coin}` | 📊 **Score:** :{score_color}[`{score}/100`]")
-            time.sleep(0.5) 
+            
+            scan_log_text = f"`{coin}`: :{score_color}[{score}] | " + scan_log_text
+            if len(scan_log_text) > 2000: scan_log_text = scan_log_text[:2000]
+            live_log.markdown(f"#### 📝 Live Scores:\n{scan_log_text}")
+            time.sleep(0.1) 
 
             if sig != "NEUTRAL":
                 if st.session_state.daily_count < MAX_DAILY_SIGNALS:
-                    send_telegram("", is_sticker=True); time.sleep(15)
+                    send_telegram("", is_sticker=True); time.sleep(5)
                     
                     if sig == "LONG":
                         sl = sl_long 
                         if (price - sl) / price < 0.005: sl = price - (atr * 1.5)
                         dist_percent = (price - sl) / price
-                    
                     else: # SHORT
                         sl = sl_short 
                         if (sl - price) / price < 0.005: sl = price + (atr * 1.5)
@@ -378,22 +390,18 @@ def run_scan():
                     
                     if dist_percent > 0: ideal_leverage = int(TARGET_SL_ROI / (dist_percent * 100))
                     else: ideal_leverage = 20
-                    
                     dynamic_leverage = max(5, min(ideal_leverage, MAX_LEVERAGE))
                     
                     if sig == "LONG":
-                        dist = price - sl
-                        tp_dist = dist * 2.0
+                        dist = price - sl; tp_dist = dist * 2.0
                         tps = [price + (tp_dist * x * 0.6) for x in range(1, 5)] 
                         emoji_circle = "🟢"; direction_txt = "Long"
                     else:
-                        dist = sl - price
-                        tp_dist = dist * 2.0
+                        dist = sl - price; tp_dist = dist * 2.0
                         tps = [price - (tp_dist * x * 0.6) for x in range(1, 5)]
                         emoji_circle = "🔴"; direction_txt = "Short"
                     
                     rr = round(abs(tps[3]-price)/abs(price-sl), 2)
-                    
                     roi_1 = round(abs(tps[0]-price)/price*100*dynamic_leverage, 1)
                     roi_2 = round(abs(tps[1]-price)/price*100*dynamic_leverage, 1)
                     roi_3 = round(abs(tps[2]-price)/price*100*dynamic_leverage, 1)
@@ -429,13 +437,12 @@ def run_scan():
                     if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
                         if not st.session_state.sent_goodbye:
                             send_telegram("🚀 Good Bye Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋")
-                            st.session_state.sent_goodbye = True
-                            save_full_state()
+                            st.session_state.sent_goodbye = True; save_full_state()
                         break
-        
         except Exception as e:
-            status_area.markdown(f"⚠️ **Error:** `{coin}` - {str(e)}")
-            time.sleep(1) 
+            scan_log_text = f"`{coin}`: ⚠️ Error | " + scan_log_text
+            live_log.markdown(f"#### 📝 Live Scores:\n{scan_log_text}")
+            time.sleep(0.1)
         
         progress_bar.progress((i + 1) / len(coins_list))
     
@@ -445,18 +452,14 @@ with tab1:
     if st.session_state.bot_active:
         if is_within_hours and not st.session_state.sent_morning:
             send_telegram("☀️ Good Morning Traders! ඔයාලා හැමෝටම ජයග්‍රාහී සුබ දවසක් වේවා! 🚀")
-            st.session_state.sent_morning = True
-            save_full_state()
+            st.session_state.sent_morning = True; save_full_state()
 
         if current_time.hour >= END_HOUR and not st.session_state.sent_goodbye:
             if st.session_state.daily_count > 0:
                 msg = "🚀 Good Bye Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋"
             else:
                 msg = "🛑 **Market Update:** අද Market එකේ අපේ Strategy එකට ගැලපෙන High Probability Setups තිබුනේ නෑ (Choppy Market). 📉\n\nබොරු Trades දාලා Loss කරගන්නවට වඩා, ඉවසීමෙන් Capital එක ආරක්ෂා කරගන්න එක තමයි Professional Trading කියන්නේ. 🧠💎\n\nහෙට අලුත් දවසකින් හමුවෙමු! Good Night Traders! 👋"
-            
-            send_telegram(msg)
-            st.session_state.sent_goodbye = True
-            save_full_state()
+            send_telegram(msg); st.session_state.sent_goodbye = True; save_full_state()
 
         if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
             st.warning("🛑 Daily Limit Reached. Sleeping..."); time.sleep(60); st.rerun()
@@ -474,8 +477,7 @@ with tab1:
                 time.sleep(5); st.rerun()
         else:
             st.warning(f"💤 SLEEPING (Resumes {START_HOUR}:00)"); time.sleep(10); st.rerun()
-    else:
-        st.error("⚠️ STOPPED"); time.sleep(2)
+    else: st.error("⚠️ STOPPED"); time.sleep(2)
 
 with tab2:
     if st.session_state.history: st.table(pd.DataFrame(st.session_state.history))
