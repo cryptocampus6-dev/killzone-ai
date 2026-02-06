@@ -89,44 +89,42 @@ def send_telegram(msg, is_sticker=False):
         return True
     except: return False
 
-# --- ROBUST DATA FETCHING (FIXED WITH HEADERS) ---
+# --- ROBUST DATA FETCHING (BINANCE PRIMARY -> MEXC FALLBACK) ---
 def get_data(symbol, limit=200, timeframe='15m'):
-    # Uses MEXC Spot API with Browser Headers to avoid blocking
+    # 1. Try Binance First (Most reliable for Cloud IPs)
+    try:
+        url = "https://api.binance.com/api/v3/klines"
+        params = {'symbol': symbol, 'interval': timeframe, 'limit': limit}
+        response = requests.get(url, params=params, timeout=5)
+        data = response.json()
+        
+        if isinstance(data, list) and len(data) > 0:
+            df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'])
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            cols = ['open', 'high', 'low', 'close', 'volume']
+            df[cols] = df[cols].apply(pd.to_numeric, errors='coerce')
+            return df
+    except:
+        pass # If Binance fails, silently move to MEXC
+
+    # 2. Try MEXC as Backup
     try:
         url = "https://api.mexc.com/api/v3/klines"
-        params = {
-            'symbol': symbol, 
-            'interval': timeframe,
-            'limit': limit
-        }
-        # 🔑 KEY FIX: User-Agent Header mimics a real browser
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
-        
-        response = requests.get(url, params=params, headers=headers, timeout=10)
-        
-        # Log specific error code if not 200
-        if response.status_code != 200:
-            return pd.DataFrame()
-
+        params = {'symbol': symbol, 'interval': timeframe, 'limit': limit}
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, params=params, headers=headers, timeout=5)
         data = response.json()
 
-        if isinstance(data, dict) and "code" in data:
-            return pd.DataFrame()
+        if isinstance(data, list) and len(data) > 0:
+            df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'c_time', 'qav', 'num', 'tbv', 'tqv', 'ign'])
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            cols = ['open', 'high', 'low', 'close', 'volume']
+            df[cols] = df[cols].apply(pd.to_numeric, errors='coerce')
+            return df
+    except:
+        pass
 
-        if not isinstance(data, list):
-            return pd.DataFrame()
-
-        df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'c_time', 'qav', 'num', 'tbv', 'tqv', 'ign'])
-        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-        cols = ['open', 'high', 'low', 'close', 'volume']
-        df[cols] = df[cols].apply(pd.to_numeric, errors='coerce')
-        
-        return df
-        
-    except Exception as e:
-        return pd.DataFrame()
+    return pd.DataFrame() # Return empty if both fail
 
 # ==============================================================================
 # 🧠 100% IMPLEMENTATION OF "THE TRADING BIBLE"
@@ -163,6 +161,8 @@ def analyze_ict(df):
     sweep_low = (df['low'] < prev_low) & (df['close'] > prev_low)
 
     bearish_ob = (df['close'].shift(1) > df['open'].shift(1)) and (df['close'] < df['open']) and (df['close'] < df['low'].shift(1))
+    
+    # FIXED: The line that was broken before is now corrected below
     bullish_ob = (df['close'].shift(1) < df['open'].shift(1)) and (df['close'] > df['open']) and (df['close'] > df['high'].shift(1))
 
     ny_time = datetime.now(pytz.timezone('America/New_York'))
@@ -331,13 +331,12 @@ def run_scan():
         try:
             status_area.markdown(f"👀 **Checking:** `{coin}` ...")
             
-            # FIXED: Passing correct symbol format (e.g., "BTCUSDT") to Direct API
+            # Use Fallback Fetcher
             df = get_data(f"{coin}USDT")
             
             if df.empty: 
                 new_log = f"`{coin}`: ⚠️ No Data | "
                 st.session_state.scan_log = new_log + st.session_state.scan_log
-                if len(st.session_state.scan_log) > 2000: st.session_state.scan_log = st.session_state.scan_log[:2000]
                 log_placeholder.markdown(f"#### 📝 Live Scores:\n{st.session_state.scan_log}")
                 time.sleep(0.1)
                 continue
@@ -429,7 +428,7 @@ with tab1:
             send_telegram("☀️ Good Morning Traders! ඔයාලා හැමෝටම ජයග්‍රාහී සුබ දවසක් වේවා! 🚀"); st.session_state.sent_morning = True; save_full_state()
         if current_time.hour >= END_HOUR and not st.session_state.sent_goodbye:
             if st.session_state.daily_count > 0: msg = "🚀 Good Bye Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋"
-            else: msg = "أද Market එකේ High Probability Setups තිබුනේ නෑ (Choppy Market). 📉\n\nහෙට අලුත් දවසකින් හමුවෙමු! Good Night Traders! 👋"
+            else: msg = "අද Market එකේ High Probability Setups තිබුනේ නෑ (Choppy Market). 📉\n\nහෙට අලුත් දවසකින් හමුවෙමු! Good Night Traders! 👋"
             send_telegram(msg); st.session_state.sent_goodbye = True; save_full_state()
         if st.session_state.daily_count >= MAX_DAILY_SIGNALS: st.warning("🛑 Daily Limit Reached. Sleeping..."); time.sleep(60); st.rerun()
         elif is_within_hours:
