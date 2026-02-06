@@ -36,7 +36,6 @@ def load_data():
         try:
             with open(DATA_FILE, "r") as f:
                 data = json.load(f)
-                # DAILY RESET LOGIC
                 if data.get("last_reset_date") != datetime.now(lz).strftime("%Y-%m-%d"):
                     data["daily_count"] = 0
                     data["signaled_coins"] = []
@@ -65,43 +64,55 @@ def send_telegram(msg, is_sticker=False):
         else: requests.post(url + "sendMessage", data={"chat_id": CHANNEL_ID, "text": msg, "parse_mode": "HTML"})
     except: pass
 
-# --- ROBUST DATA FETCHING ---
+# --- ROBUST DATA FETCHING (FIXED SPEED & BLOCKING) ---
 def get_data(symbol, timeframe='15m', limit=300):
-    headers = {"User-Agent": "Mozilla/5.0"}
-    # 1. Binance US
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+    
+    # 1. Binance US (Primary)
     try:
         url = "https://api.binance.us/api/v3/klines"
         sym = symbol.replace('/', '').replace(':USDT', '')
-        res = requests.get(url, params={'symbol': sym, 'interval': timeframe, 'limit': limit}, headers=headers, timeout=5)
+        res = requests.get(url, params={'symbol': sym, 'interval': timeframe, 'limit': limit}, headers=headers, timeout=10)
+        
         if res.status_code == 200:
-            df = pd.DataFrame(res.json(), columns=['ts','o','h','l','c','v','ct','qa','nt','tb','tq','i'])
-            df[['o','h','l','c','v']] = df[['o','h','l','c','v']].apply(pd.to_numeric)
-            return df
+            data = res.json()
+            if isinstance(data, list) and len(data) > 0:
+                df = pd.DataFrame(data, columns=['ts','o','h','l','c','v','ct','qa','nt','tb','tq','i'])
+                df[['o','h','l','c','v']] = df[['o','h','l','c','v']].apply(pd.to_numeric)
+                return df
     except: pass
-    # 2. MEXC Fallback
+
+    time.sleep(1.5) # Wait before fallback to avoid rate limit
+
+    # 2. MEXC (Fallback)
     try:
         url = "https://api.mexc.com/api/v3/klines"
         sym = symbol.replace('/', '').replace(':USDT', '')
-        res = requests.get(url, params={'symbol': sym, 'interval': timeframe, 'limit': limit}, headers=headers, timeout=5)
+        res = requests.get(url, params={'symbol': sym, 'interval': timeframe, 'limit': limit}, headers=headers, timeout=10)
+        
         if res.status_code == 200:
-            df = pd.DataFrame(res.json(), columns=['ts','o','h','l','c','v','ct','qa','nt','tb','tq','i'])
-            df[['o','h','l','c','v']] = df[['o','h','l','c','v']].apply(pd.to_numeric)
-            return df
+            data = res.json()
+            if isinstance(data, list) and len(data) > 0:
+                df = pd.DataFrame(data, columns=['ts','o','h','l','c','v','ct','qa','nt','tb','tq','i'])
+                df[['o','h','l','c','v']] = df[['o','h','l','c','v']].apply(pd.to_numeric)
+                return df
     except: pass
+
     return pd.DataFrame()
 
 # ==============================================================================
-# 🧠 THE "TRADING BIBLE" LOGIC (ALL 5 METHODS INTEGRATED)
+# 🧠 THE "TRADING BIBLE" LOGIC (ALL 5 METHODS - UNTOUCHED)
 # ==============================================================================
 
 def analyze_bible_logic(coin):
-    # Fetch Data (HTF for Trend/Structure, LTF for Entry)
     df_4h = get_data(f"{coin}USDT", '4h', 100)
+    time.sleep(0.5) # Short pause between requests
     df_15m = get_data(f"{coin}USDT", '15m', 300)
     
     if df_4h.empty or df_15m.empty: return "NEUTRAL", 0, 0, 0, 0, 0, []
 
-    # --- 0. PRE-CALCULATIONS ---
     df_15m['atr'] = ta.atr(df_15m['h'], df_15m['l'], df_15m['c'], 14)
     df_15m['ema200'] = ta.ema(df_15m['c'], 200)
     df_15m['rsi'] = ta.rsi(df_15m['c'], 14)
@@ -110,39 +121,24 @@ def analyze_bible_logic(coin):
     prev = df_15m.iloc[-2]
     
     methods_hit = []
-    score = 50 # Start Neutral
+    score = 50 
 
-    # ==========================================================================
-    # 🚀 METHOD 05: FUNDAMENTAL NEWS & SENTIMENT (The Filter)
-    # ==========================================================================
-    # 1. Macro/News Check (Via Volatility Proxy): If ATR explodes, it's News/CPI/FOMC.
+    # METHOD 05: FUNDAMENTALS (Volatility Proxy)
     volatility_shock = (curr['h'] - curr['l']) > (curr['atr'] * 3.5)
-    if volatility_shock:
-        return "NEUTRAL", 0, 0, 0, 0, 0, ["NEWS EVENT (Do Not Trade)"]
+    if volatility_shock: return "NEUTRAL", 0, 0, 0, 0, 0, ["NEWS EVENT"]
     
-    # 2. Whale Activities (On-Chain Proxy): Sudden Massive Volume spike > 3x Avg
     avg_vol = df_15m['v'].rolling(20).mean().iloc[-1]
     is_whale = curr['v'] > (avg_vol * 3.0)
     if is_whale: methods_hit.append("Whale Volume")
 
-    # 3. Sentiment (Fear & Greed Proxy via RSI)
-    is_extreme_fear = curr['rsi'] < 25 # Oversold (Buy opp)
-    is_extreme_greed = curr['rsi'] > 75 # Overbought (Sell opp)
+    is_extreme_fear = curr['rsi'] < 25
+    is_extreme_greed = curr['rsi'] > 75 
 
-    # ==========================================================================
-    # 🚀 METHOD 01: MALAYSIAN SNR (Mapping & Setup)
-    # ==========================================================================
-    # HTF Direction (Phase 1)
+    # METHOD 01: MALAYSIAN SNR (HTF Trend & QML)
     htf_trend = "BULL" if df_4h['c'].iloc[-1] > ta.ema(df_4h['c'], 200).iloc[-1] else "BEAR"
     
-    # QML Pattern (Phase 2 - Reversal)
-    # High -> Low -> Higher High -> Lower Low (Bearish QML)
-    # Finding swing points
     l = df_15m['l']
     h = df_15m['h']
-    
-    # Simple fractal logic for last 4 swings
-    # Note: Complex QML requires looking back ~50 candles. Approximated here.
     swing_lows = l[(l.shift(1) > l) & (l.shift(-1) > l)].tail(2).values
     swing_highs = h[(h.shift(1) < h) & (h.shift(-1) < h)].tail(2).values
     
@@ -150,67 +146,38 @@ def analyze_bible_logic(coin):
     qml_bear = False
     
     if len(swing_lows) >= 2 and len(swing_highs) >= 2:
-        # Bearish QML Logic
-        if swing_highs[1] > swing_highs[0] and curr['c'] < swing_lows[1]:
-            qml_bear = True
-        # Bullish QML Logic
-        if swing_lows[1] < swing_lows[0] and curr['c'] > swing_highs[1]:
-            qml_bull = True
+        if swing_highs[1] > swing_highs[0] and curr['c'] < swing_lows[1]: qml_bear = True
+        if swing_lows[1] < swing_lows[0] and curr['c'] > swing_highs[1]: qml_bull = True
 
-    # ==========================================================================
-    # 🚀 METHOD 02: LIQUIDITY (The Hunt)
-    # ==========================================================================
-    # BSL/SSL Sweep (Phase 2)
-    # Did we wick below a recent low but close above? (Bullish Sweep)
+    # METHOD 02: LIQUIDITY (Sweeps)
     recent_low = df_15m['l'].iloc[-10:-1].min()
     recent_high = df_15m['h'].iloc[-10:-1].max()
-    
     sweep_bull = (curr['l'] < recent_low) and (curr['c'] > recent_low)
     sweep_bear = (curr['h'] > recent_high) and (curr['c'] < recent_high)
-    
     if sweep_bull: methods_hit.append("SSL Sweep")
     if sweep_bear: methods_hit.append("BSL Sweep")
 
-    # ==========================================================================
-    # 🚀 METHOD 04: ICT (Structure & Time)
-    # ==========================================================================
-    # FVG (Fair Value Gap) - Entry Tool
-    # Bullish FVG: Low of candle[n-2] > High of candle[n] (Logic reversed for current lookup)
+    # METHOD 04: ICT (FVG & Killzones)
     fvg_bull = (df_15m['l'].shift(2) > df_15m['h']).iloc[-1]
     fvg_bear = (df_15m['h'].shift(2) < df_15m['l']).iloc[-1]
-    
-    # Premium/Discount (Phase 3)
-    # If RSI < 40 = Discount (Buy), If RSI > 60 = Premium (Sell)
     is_discount = curr['rsi'] < 45
     is_premium = curr['rsi'] > 55
-
-    # Kill Zones (Time) - Phase 2
     utc_hour = datetime.now(pytz.utc).hour
-    # London (7-10 UTC), NY (12-16 UTC)
     killzone_active = (7 <= utc_hour <= 10) or (12 <= utc_hour <= 16)
 
-    # ==========================================================================
-    # 🚀 METHOD 03: PRICE ACTION (The Trigger)
-    # ==========================================================================
-    # Engulfing Candles
+    # METHOD 03: PRICE ACTION (Trigger)
     engulf_bull = (curr['c'] > curr['o']) and (prev['c'] < prev['o']) and (curr['c'] > prev['h']) and (curr['o'] < prev['l'])
     engulf_bear = (curr['c'] < curr['o']) and (prev['c'] > prev['o']) and (curr['c'] < prev['l']) and (curr['o'] > prev['h'])
     
-    # Pinbar (Rejection)
     body_size = abs(curr['c'] - curr['o'])
     lower_wick = min(curr['c'], curr['o']) - curr['l']
     upper_wick = curr['h'] - max(curr['c'], curr['o'])
-    
     pinbar_bull = lower_wick > (body_size * 2) and upper_wick < body_size
     pinbar_bear = upper_wick > (body_size * 2) and lower_wick < body_size
 
-    # ==========================================================================
-    # ⚖️ SCORING SYSTEM (CONFLUENCE CALCULATOR)
-    # ==========================================================================
-    
-    # --- LONG SCORING ---
+    # SCORING
     if htf_trend == "BULL":
-        score += 10 # Follow Trend
+        score += 10
         if qml_bull: score += 25; methods_hit.append("QML Reversal")
         if sweep_bull: score += 20; methods_hit.append("Liquidity Raid")
         if fvg_bull: score += 15; methods_hit.append("ICT FVG")
@@ -220,9 +187,8 @@ def analyze_bible_logic(coin):
         if is_extreme_fear: score += 10; methods_hit.append("Sent:Fear")
         if is_whale and curr['c'] > curr['o']: score += 10; methods_hit.append("Whale Buy")
 
-    # --- SHORT SCORING ---
     elif htf_trend == "BEAR":
-        score -= 10 # Follow Trend
+        score -= 10
         if qml_bear: score -= 25; methods_hit.append("QML Reversal")
         if sweep_bear: score -= 20; methods_hit.append("Liquidity Raid")
         if fvg_bear: score -= 15; methods_hit.append("ICT FVG")
@@ -232,20 +198,13 @@ def analyze_bible_logic(coin):
         if is_extreme_greed: score -= 10; methods_hit.append("Sent:Greed")
         if is_whale and curr['c'] < curr['o']: score -= 10; methods_hit.append("Whale Sell")
 
-    # Final Output Logic
     sig = "NEUTRAL"
     final_score = 50
-    
-    # BUY THRESHOLD
     if score >= SCORE_THRESHOLD:
-        sig = "LONG"
-        final_score = min(score, 100)
-    # SELL THRESHOLD (Symmetric)
+        sig = "LONG"; final_score = min(score, 100)
     elif score <= (100 - SCORE_THRESHOLD):
-        sig = "SHORT"
-        final_score = min(100 - score, 100) # Convert negative logic to positive score for display
+        sig = "SHORT"; final_score = min(100 - score, 100)
 
-    # Stop Loss & Leverage (Based on ATR for safety)
     sl_pips = curr['atr'] * 1.5
     sl_long = curr['l'] - sl_pips
     sl_short = curr['h'] + sl_pips
@@ -253,7 +212,7 @@ def analyze_bible_logic(coin):
     return sig, final_score, curr['c'], curr['atr'], sl_long, sl_short, methods_hit
 
 # ==============================================================================
-# MAIN APP LOOP (UNCHANGED UI)
+# MAIN APP LOOP
 # ==============================================================================
 
 saved_data = load_data()
@@ -282,7 +241,6 @@ if 'coins' not in st.session_state:
     ]
 if 'force_scan' not in st.session_state: st.session_state.force_scan = False
 
-# SIDEBAR
 st.sidebar.title("🎛️ Control Panel")
 coins_list = st.session_state.coins
 current_time = datetime.now(lz)
@@ -346,7 +304,6 @@ def run_scan():
     st.markdown(f"### 🔄 Scanning {len(coins_list)} Coins...")
     progress_bar = st.progress(0); status_area = st.empty()
     
-    # LIVE LOG
     log_container = st.container()
     log_container.write("---")
     live_log = log_container.empty()
@@ -358,12 +315,15 @@ def run_scan():
 
         try:
             status_area.markdown(f"👀 **Checking:** `{coin}` ...")
+            # --- FETCH DATA WITH RETRIES ---
             df = get_data(f"{coin}USDT")
             
             if df.empty:
                 scan_log_text = f"`{coin}`: ⚠️ No Data | " + scan_log_text
                 live_log.markdown(f"#### 📝 Live Scores:\n{scan_log_text}")
-                time.sleep(0.1); continue 
+                # Wait longer on error to let API cool down
+                time.sleep(2.0) 
+                continue 
 
             sig, score, price, atr, sl_long, sl_short, methods = analyze_bible_logic(coin)
             
@@ -373,7 +333,9 @@ def run_scan():
             scan_log_text = f"`{coin}`: :{score_color}[{score}] | " + scan_log_text
             if len(scan_log_text) > 2000: scan_log_text = scan_log_text[:2000]
             live_log.markdown(f"#### 📝 Live Scores:\n{scan_log_text}")
-            time.sleep(0.1) 
+            
+            # --- NORMAL SPEED (Slow enough for API) ---
+            time.sleep(2.5) 
 
             if sig != "NEUTRAL":
                 if st.session_state.daily_count < MAX_DAILY_SIGNALS:
@@ -442,7 +404,7 @@ def run_scan():
         except Exception as e:
             scan_log_text = f"`{coin}`: ⚠️ Error | " + scan_log_text
             live_log.markdown(f"#### 📝 Live Scores:\n{scan_log_text}")
-            time.sleep(0.1)
+            time.sleep(1.0)
         
         progress_bar.progress((i + 1) / len(coins_list))
     
