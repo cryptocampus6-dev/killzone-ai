@@ -51,8 +51,15 @@ def load_data():
         try:
             with open(DATA_FILE, "r") as f:
                 data = json.load(f)
+                # Reset logic if new day
                 if data.get("last_reset_date") != datetime.now(lz).strftime("%Y-%m-%d"):
-                    data.update({"daily_count": 0, "signaled_coins": [], "last_reset_date": datetime.now(lz).strftime("%Y-%m-%d"), "sent_morning": False, "sent_goodbye": False})
+                    data.update({
+                        "daily_count": 0, 
+                        "signaled_coins": [], 
+                        "last_reset_date": datetime.now(lz).strftime("%Y-%m-%d"), 
+                        "sent_morning": False, 
+                        "sent_goodbye": False
+                    })
                     with open(DATA_FILE, "w") as fw: json.dump(data, fw)
                 return data
         except: return default
@@ -60,10 +67,14 @@ def load_data():
 
 def save_full_state():
     data = {
-        "bot_active": st.session_state.bot_active, "daily_count": st.session_state.daily_count,
-        "last_reset_date": st.session_state.last_reset_date, "signaled_coins": st.session_state.signaled_coins,
-        "history": st.session_state.history, "last_scan_block_id": st.session_state.last_scan_block_id,
-        "sent_morning": st.session_state.sent_morning, "sent_goodbye": st.session_state.sent_goodbye
+        "bot_active": st.session_state.bot_active, 
+        "daily_count": st.session_state.daily_count,
+        "last_reset_date": st.session_state.last_reset_date, 
+        "signaled_coins": st.session_state.signaled_coins,
+        "history": st.session_state.history, 
+        "last_scan_block_id": st.session_state.last_scan_block_id,
+        "sent_morning": st.session_state.sent_morning, 
+        "sent_goodbye": st.session_state.sent_goodbye
     }
     with open(DATA_FILE, "w") as f: json.dump(data, f)
 
@@ -181,6 +192,10 @@ def analyze_with_vision(df, coin_name):
 saved_data = load_data()
 for k, v in saved_data.items():
     if k not in st.session_state: st.session_state[k] = v
+
+# --- FIX: Ensure force_scan exists ---
+if 'force_scan' not in st.session_state:
+    st.session_state.force_scan = False
 
 if 'coins' not in st.session_state:
     # Reduced coin list for AI speed (Can add more later)
@@ -302,6 +317,7 @@ with tab1:
     if st.session_state.bot_active:
         if is_within_hours:
             current_block_id = current_time.hour * 4 + (current_time.minute // 15)
+            # Safe access to force_scan now
             if (current_block_id != st.session_state.last_scan_block_id) or st.session_state.force_scan:
                 st.session_state.last_scan_block_id = current_block_id
                 st.session_state.force_scan = False
