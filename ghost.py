@@ -12,16 +12,11 @@ import google.generativeai as genai
 from datetime import datetime
 
 # ==============================================================================
-# 🔐 USER SETTINGS (UPDATED)
+# 🔐 USER SETTINGS
 # ==============================================================================
-# ඔයා එවපු අලුත් API Key එක මෙතනට දැම්මා
 GEMINI_API_KEY = "AIzaSyAQhJmvE8VkImSSN-Aiv98nOv_1prfD7QY" 
-
 TELEGRAM_BOT_TOKEN = "8524773131:AAG7YAYrzt9HYu34UhUJ0af_TDamhyndBas"
-
-# ඔයා එවපු අලුත් Test Channel ID එක (ඉස්සරහට -100 දැම්මා Telegram Format එකට)
 CHANNEL_ID = "-1003534299054"
-
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWlMq--iOTVBE4BA"
 
 # --- CONFIGURATION ---
@@ -43,9 +38,16 @@ lz = pytz.timezone('Asia/Colombo')
 # --- DATA MANAGEMENT ---
 def load_data():
     default = {
-        "bot_active": True, "daily_count": 0, "last_reset_date": datetime.now(lz).strftime("%Y-%m-%d"),
-        "signaled_coins": [], "history": [], "last_scan_block_id": -1,
-        "sent_morning": False, "sent_goodbye": False
+        "bot_active": True, 
+        "daily_count": 0, 
+        "last_reset_date": datetime.now(lz).strftime("%Y-%m-%d"),
+        "signaled_coins": [], 
+        "history": [], 
+        "last_scan_block_id": -1,
+        "sent_morning": False, 
+        "sent_goodbye": False,
+        "scan_log": "",         # Added to default
+        "force_scan": False     # Added to default
     }
     if os.path.exists(DATA_FILE):
         try:
@@ -58,7 +60,8 @@ def load_data():
                         "signaled_coins": [], 
                         "last_reset_date": datetime.now(lz).strftime("%Y-%m-%d"), 
                         "sent_morning": False, 
-                        "sent_goodbye": False
+                        "sent_goodbye": False,
+                        "scan_log": ""
                     })
                     with open(DATA_FILE, "w") as fw: json.dump(data, fw)
                 return data
@@ -74,7 +77,9 @@ def save_full_state():
         "history": st.session_state.history, 
         "last_scan_block_id": st.session_state.last_scan_block_id,
         "sent_morning": st.session_state.sent_morning, 
-        "sent_goodbye": st.session_state.sent_goodbye
+        "sent_goodbye": st.session_state.sent_goodbye,
+        "scan_log": st.session_state.scan_log,
+        "force_scan": st.session_state.force_scan
     }
     with open(DATA_FILE, "w") as f: json.dump(data, f)
 
@@ -90,7 +95,6 @@ def send_telegram(msg, is_sticker=False):
 def get_data(symbol):
     try:
         ticker = f"{symbol}-USD"
-        # Download 2 days of data to generate a proper chart
         df = yf.download(ticker, period="2d", interval="15m", progress=False) 
         if not df.empty:
             df = df.reset_index()
@@ -108,20 +112,17 @@ def get_data(symbol):
 def analyze_with_vision(df, coin_name):
     if df.empty or len(df) < 30: return "NEUTRAL", 0, 0, 0, 0, 0, "No Data"
 
-    # 1. Generate Chart Image (TradingView Style)
+    # 1. Generate Chart Image
     chart_filename = "temp_chart.png"
-    # Colors: Green for Up, Red for Down
     mc = mpf.make_marketcolors(up='#00ff00', down='#ff0000', inherit=True)
     s  = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True)
     
-    # Calculate EMA 200 for the AI to see trend
     ema200 = df['Close'].ewm(span=200).mean()
     add_plots = [mpf.make_addplot(ema200[-60:], color='blue', width=1.5)] if len(df) > 200 else []
 
     try:
-        # Plotting logic
         mpf.plot(
-            df.tail(60), # Show last 60 candles
+            df.tail(60),
             type='candle',
             style=s,
             volume=True,
@@ -139,7 +140,6 @@ def analyze_with_vision(df, coin_name):
     try:
         img = genai.upload_file(chart_filename)
         
-        # This PROMPT is the "Brain" of the bot
         prompt = """
         You are a professional crypto day trader using Price Action and Market Structure.
         Analyze this 15-minute chart image.
@@ -166,7 +166,6 @@ def analyze_with_vision(df, coin_name):
         score = int(result.get("score", 0))
         reason = result.get("reason", "AI Analysis")
 
-        # Clean up the image file
         try: os.remove(chart_filename)
         except: pass
 
@@ -174,7 +173,7 @@ def analyze_with_vision(df, coin_name):
         print(f"AI Error: {e}")
         return "NEUTRAL", 0, 0, 0, 0, 0, "AI Error"
 
-    # 3. Calculate Levels (TP/SL)
+    # 3. Calculate Levels
     curr_close = df['Close'].iloc[-1]
     atr = (df['High'].iloc[-1] - df['Low'].iloc[-1])
     
@@ -186,21 +185,23 @@ def analyze_with_vision(df, coin_name):
     return sig, score, curr_close, atr, sl_long, sl_short, reason
 
 # ==============================================================================
-# MAIN APP LOOP
+# MAIN APP LOOP (FIXED INITIALIZATION)
 # ==============================================================================
 
+# 1. Load Data
 saved_data = load_data()
+
+# 2. Initialize ALL Session State variables safely
 for k, v in saved_data.items():
     if k not in st.session_state: st.session_state[k] = v
 
-# --- FIX: Ensure force_scan exists ---
-if 'force_scan' not in st.session_state:
-    st.session_state.force_scan = False
-
+# Double check critical keys exist to prevent AttributeError
+if 'scan_log' not in st.session_state: st.session_state.scan_log = ""
+if 'force_scan' not in st.session_state: st.session_state.force_scan = False
 if 'coins' not in st.session_state:
-    # Reduced coin list for AI speed (Can add more later)
     st.session_state.coins = ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "LTC", "DOT", "MATIC", "UNI", "BCH", "FIL", "NEAR", "ATOM", "ICP", "IMX", "APT"]
 
+# --- SIDEBAR ---
 st.sidebar.title("🎛️ Control Panel")
 coins_list = st.session_state.coins
 current_time = datetime.now(lz)
@@ -238,6 +239,8 @@ def run_scan():
     
     log_container = st.container()
     live_log = log_container.empty()
+    
+    # Ensure log exists inside function too
     if 'scan_log' not in st.session_state: st.session_state.scan_log = ""
 
     for i, coin in enumerate(coins_list):
