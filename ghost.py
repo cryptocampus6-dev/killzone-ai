@@ -7,6 +7,10 @@ import pytz
 import os
 import json
 import yfinance as yf
+
+# --- FIX: MATPLOTLIB HEADLESS MODE ---
+import matplotlib
+matplotlib.use('Agg') # This is the magic line to fix Chart Gen Error
 import mplfinance as mpf
 import google.generativeai as genai
 from datetime import datetime
@@ -46,14 +50,13 @@ def load_data():
         "last_scan_block_id": -1,
         "sent_morning": False, 
         "sent_goodbye": False,
-        "scan_log": "",         # Added to default
-        "force_scan": False     # Added to default
+        "scan_log": "",
+        "force_scan": False
     }
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r") as f:
                 data = json.load(f)
-                # Reset logic if new day
                 if data.get("last_reset_date") != datetime.now(lz).strftime("%Y-%m-%d"):
                     data.update({
                         "daily_count": 0, 
@@ -98,9 +101,21 @@ def get_data(symbol):
         df = yf.download(ticker, period="2d", interval="15m", progress=False) 
         if not df.empty:
             df = df.reset_index()
-            if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.droplevel(1)
-            df = df.rename(columns={'Datetime': 'Date', 'Open': 'Open', 'High': 'High', 'Low': 'Low', 'Close': 'Close', 'Volume': 'Volume'})
-            df = df.set_index('Date')
+            # Handle MultiIndex columns (yfinance update)
+            if isinstance(df.columns, pd.MultiIndex): 
+                try:
+                    df.columns = df.columns.droplevel(1)
+                except:
+                    pass
+            
+            # Renaming logic
+            required_cols = {'Datetime': 'Date', 'Open': 'Open', 'High': 'High', 'Low': 'Low', 'Close': 'Close', 'Volume': 'Volume'}
+            df = df.rename(columns=required_cols)
+            
+            # Ensure Date index
+            if 'Date' in df.columns:
+                df = df.set_index('Date')
+            
             return df
     except: return pd.DataFrame()
     return pd.DataFrame()
@@ -113,7 +128,7 @@ def analyze_with_vision(df, coin_name):
     if df.empty or len(df) < 30: return "NEUTRAL", 0, 0, 0, 0, 0, "No Data"
 
     # 1. Generate Chart Image
-    chart_filename = "temp_chart.png"
+    chart_filename = f"chart_{coin_name}.png"
     mc = mpf.make_marketcolors(up='#00ff00', down='#ff0000', inherit=True)
     s  = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True)
     
@@ -130,11 +145,11 @@ def analyze_with_vision(df, coin_name):
             title=f"{coin_name} - 15m Chart",
             savefig=chart_filename,
             figsize=(10, 6),
-            off_image=True
+            off_image=True # Important for headless
         )
     except Exception as e:
-        print(f"Chart Error: {e}")
-        return "NEUTRAL", 0, 0, 0, 0, 0, "Chart Gen Error"
+        # Return the actual error to debug
+        return "NEUTRAL", 0, 0, 0, 0, 0, f"Chart Err: {str(e)[:20]}"
 
     # 2. Ask Gemini AI
     try:
@@ -170,8 +185,7 @@ def analyze_with_vision(df, coin_name):
         except: pass
 
     except Exception as e:
-        print(f"AI Error: {e}")
-        return "NEUTRAL", 0, 0, 0, 0, 0, "AI Error"
+        return "NEUTRAL", 0, 0, 0, 0, 0, f"AI Err: {str(e)[:20]}"
 
     # 3. Calculate Levels
     curr_close = df['Close'].iloc[-1]
@@ -185,23 +199,18 @@ def analyze_with_vision(df, coin_name):
     return sig, score, curr_close, atr, sl_long, sl_short, reason
 
 # ==============================================================================
-# MAIN APP LOOP (FIXED INITIALIZATION)
+# MAIN APP LOOP
 # ==============================================================================
 
-# 1. Load Data
 saved_data = load_data()
-
-# 2. Initialize ALL Session State variables safely
 for k, v in saved_data.items():
     if k not in st.session_state: st.session_state[k] = v
 
-# Double check critical keys exist to prevent AttributeError
 if 'scan_log' not in st.session_state: st.session_state.scan_log = ""
 if 'force_scan' not in st.session_state: st.session_state.force_scan = False
 if 'coins' not in st.session_state:
     st.session_state.coins = ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "LTC", "DOT", "MATIC", "UNI", "BCH", "FIL", "NEAR", "ATOM", "ICP", "IMX", "APT"]
 
-# --- SIDEBAR ---
 st.sidebar.title("🎛️ Control Panel")
 coins_list = st.session_state.coins
 current_time = datetime.now(lz)
@@ -239,8 +248,6 @@ def run_scan():
     
     log_container = st.container()
     live_log = log_container.empty()
-    
-    # Ensure log exists inside function too
     if 'scan_log' not in st.session_state: st.session_state.scan_log = ""
 
     for i, coin in enumerate(coins_list):
@@ -253,7 +260,6 @@ def run_scan():
             df = get_data(coin)
             if df.empty: continue 
 
-            # CALL AI FUNCTION
             sig, score, price, atr, sl_long, sl_short, reason = analyze_with_vision(df, coin)
             
             if score >= 85: score_color = "green"
@@ -310,7 +316,6 @@ def run_scan():
             print(f"Error {coin}: {e}")
             time.sleep(1)
         
-        # Pause slightly to respect Gemini rate limits
         time.sleep(4) 
         progress_bar.progress((i + 1) / len(coins_list))
     
@@ -320,7 +325,6 @@ with tab1:
     if st.session_state.bot_active:
         if is_within_hours:
             current_block_id = current_time.hour * 4 + (current_time.minute // 15)
-            # Safe access to force_scan now
             if (current_block_id != st.session_state.last_scan_block_id) or st.session_state.force_scan:
                 st.session_state.last_scan_block_id = current_block_id
                 st.session_state.force_scan = False
