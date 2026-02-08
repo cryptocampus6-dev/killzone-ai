@@ -257,22 +257,47 @@ if st.sidebar.button("🗑️ Remove Selected"):
         st.session_state.coins.remove(remove_coin); save_full_state(); st.rerun()
 
 st.sidebar.markdown("---")
-# Test Button at Bottom
+
+# --- TEST BUTTON WITH REAL SIGNAL FORMAT ---
 if st.sidebar.button("📡 Test Telegram & Chart", use_container_width=True):
     st.sidebar.info("Generating BTC Chart...")
     test_df = get_data("BTC")
     if not test_df.empty:
         c_path, c_err = generate_chart_image(test_df, "BTC")
         if c_path:
-            send_telegram("💎<b>GHOST TEST</b>💎\n\n✅ System Online", image_path=c_path)
-            st.sidebar.success("Sent!")
+            # Generate Dummy Data for Test
+            current_price = test_df['Close'].iloc[-1]
+            p_fmt = ".2f"
+            
+            # Simulated LONG Signal
+            tp1 = current_price * 1.01
+            tp2 = current_price * 1.02
+            tp3 = current_price * 1.03
+            sl = current_price * 0.98
+            
+            msg = (
+                f"💎<b>CRYPTO CAMPUS AI VISION (TEST)</b>💎\n\n"
+                f"👁️ <b>BTC USDT</b>\n\n"
+                f"🟢 <b>LONG Signal</b>\n"
+                f"🧠 <b>Reason:</b> Test Signal for verification.\n\n"
+                f"💥<b>Entry {current_price:{p_fmt}}</b>\n\n"
+                f"✅<b>Targets:</b>\n"
+                f"1️⃣ {tp1:{p_fmt}}\n"
+                f"2️⃣ {tp2:{p_fmt}}\n"
+                f"3️⃣ {tp3:{p_fmt}}\n\n"
+                f"⭕ <b>Stop Loss {sl:{p_fmt}}</b>\n\n"
+                f"⚠️ <b>Risk: 1-2% Only</b>"
+            )
+            
+            send_telegram(msg, image_path=c_path)
+            st.sidebar.success("Test Signal Sent!")
         else:
             st.sidebar.error(f"Failed: {c_err}")
     else:
         st.sidebar.error("Failed to fetch BTC")
 
 # --- MAIN CONTENT ---
-st.title("👻 GHOST PROTOCOL 4.2 : UI UPDATE")
+st.title("👻 GHOST PROTOCOL 4.2 : FINAL VISION")
 st.write("Engine: **Google Gemini 1.5 Pro** | Strategy: **Vision AI**")
 st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
 
