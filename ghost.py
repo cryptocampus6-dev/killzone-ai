@@ -61,7 +61,7 @@ def send_telegram(msg, is_sticker=False):
         else: requests.post(url + "sendMessage", data={"chat_id": CHANNEL_ID, "text": msg, "parse_mode": "HTML"})
     except: pass
 
-# --- DATA FETCHING (STABLE) ---
+# --- DATA FETCHING ---
 def get_data(symbol, limit=200):
     try:
         ticker = f"{symbol}-USD"
@@ -75,100 +75,77 @@ def get_data(symbol, limit=200):
     return pd.DataFrame()
 
 # ==============================================================================
-# 🧠 NEW STRATEGY: HEIKIN-ASHI + SUPERTREND + ADX (Bot Optimized)
+# 🧠 NEW STRATEGY: HEIKIN-ASHI + SUPERTREND + ADX
 # ==============================================================================
 
 def analyze_ultimate(df, coin_name):
     if df.empty or len(df) < 50: return "NEUTRAL", 0, 0, 0, 0, 0, []
 
-    # 1. Calculate Heikin-Ashi Candles
+    # Heikin-Ashi Calc
     df_ha = df.copy()
     df_ha['ha_close'] = (df['open'] + df['high'] + df['low'] + df['close']) / 4
-    
-    # Initialize HA Open (First candle = regular open)
     ha_open = [df['open'].iloc[0]]
     for i in range(1, len(df)):
         ha_open.append((ha_open[-1] + df_ha['ha_close'].iloc[i-1]) / 2)
     df_ha['ha_open'] = ha_open
     
-    # 2. Indicators (SuperTrend & ADX & ATR)
-    # SuperTrend (Length=10, Multiplier=3)
+    # Indicators
     supertrend = ta.supertrend(df['high'], df['low'], df['close'], length=10, multiplier=3)
-    # Extract the direction column (1 = Uptrend, -1 = Downtrend)
     st_dir_col = supertrend.columns[1] 
     df = pd.concat([df, supertrend], axis=1)
     
-    # ADX (Trend Strength)
     adx = ta.adx(df['high'], df['low'], df['close'], length=14)
     df = pd.concat([df, adx], axis=1)
     
-    # ATR (For Stop Loss)
     df['atr'] = ta.atr(df['high'], df['low'], df['close'], 14)
 
-    # Get Current Values
     curr = df.iloc[-1]
     curr_ha_close = df_ha['ha_close'].iloc[-1]
     curr_ha_open = df_ha['ha_open'].iloc[-1]
-    curr_st_dir = curr[st_dir_col] # 1 or -1
+    curr_st_dir = curr[st_dir_col] 
     curr_adx = curr['ADX_14']
     
     methods_hit = []
     score = 50 
 
-    # --- STRATEGY LOGIC ---
-    
-    # Check 1: Heikin-Ashi Color
+    # Logic
     ha_green = curr_ha_close > curr_ha_open
     ha_red = curr_ha_close < curr_ha_open
-    
-    # Check 2: SuperTrend Direction
     st_bull = curr_st_dir == 1
     st_bear = curr_st_dir == -1
-    
-    # Check 3: Trend Strength (ADX)
     strong_trend = curr_adx > 25
-    
-    # Check 4: Momentum (Volume > Avg)
     avg_vol = df['volume'].rolling(20).mean().iloc[-1]
     good_vol = curr['volume'] > avg_vol
 
-    # --- SCORING ---
-    
-    if st_bull: # SuperTrend says UP
+    # Scoring
+    if st_bull:
         score += 20
         if ha_green: score += 20; methods_hit.append("HA Bull")
         if strong_trend: score += 20; methods_hit.append("ADX > 25")
         if good_vol: score += 10; methods_hit.append("Volume")
-        # Bonus: Price above EMA 200
         if curr['close'] > ta.ema(df['close'], 200).iloc[-1]: score += 10; methods_hit.append("Trend")
         
-    elif st_bear: # SuperTrend says DOWN
+    elif st_bear:
         score -= 20
         if ha_red: score -= 20; methods_hit.append("HA Bear")
         if strong_trend: score -= 20; methods_hit.append("ADX > 25")
         if good_vol: score -= 10; methods_hit.append("Volume")
-        # Bonus: Price below EMA 200
         if curr['close'] < ta.ema(df['close'], 200).iloc[-1]: score -= 10; methods_hit.append("Trend")
 
-    # FINAL SIGNAL
     sig = "NEUTRAL"
     final_score = score
-    
     if score >= 85:
-        sig = "LONG"
-        final_score = min(score, 100)
+        sig = "LONG"; final_score = min(score, 100)
     elif score <= 15:
-        sig = "SHORT"
-        final_score = min(100 - score, 100)
+        sig = "SHORT"; final_score = min(100 - score, 100)
 
-    # SL Calculation (ATR Based - Dynamic)
-    sl_long = curr['close'] - (curr['atr'] * 2.0) # Slightly wider SL for Swing
+    sl_long = curr['close'] - (curr['atr'] * 2.0)
     sl_short = curr['close'] + (curr['atr'] * 2.0)
 
     return sig, final_score, curr['close'], curr['atr'], sl_long, sl_short, methods_hit
 
 # ==============================================================================
-# MAIN APP LOOP (UNCHANGED UI & TELEGRAM FORMAT)
+# MAIN APP LOOP
 # ==============================================================================
 
 saved_data = load_data()
@@ -180,7 +157,6 @@ if 'coins' not in st.session_state:
 if 'scan_log' not in st.session_state: st.session_state.scan_log = ""
 if 'force_scan' not in st.session_state: st.session_state.force_scan = False
 
-# SIDEBAR
 st.sidebar.title("🎛️ Control Panel")
 coins_list = st.session_state.coins
 current_time = datetime.now(lz)
@@ -236,7 +212,8 @@ if st.sidebar.button("📡 Test Telegram"):
     send_telegram(test_msg); st.sidebar.success("Test Sent!")
 
 st.title("👻 GHOST PROTOCOL 2.0 : ELITE TRADER")
-st.write("Methods Active: **Structure Guard, 3xATR Shield, Double Conf, Trend (4H), ADX, VSA, Sniper, MSNR, Liquidity, PA, ICT, News, Fib, RSI Div, BB**")
+# --- මෙන්න මේ පේළිය මම අලුත් කළා Strategy එකට ගැලපෙන්න ---
+st.write("Methods Active: **Heikin-Ashi Smoothed, SuperTrend (Trend), ADX (>25 Strength), Volume Flow, ATR Dynamic Stop, Trend Following System**")
 st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
 
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
