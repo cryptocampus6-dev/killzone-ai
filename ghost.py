@@ -10,7 +10,7 @@ import yfinance as yf
 
 # --- FIX: MATPLOTLIB HEADLESS MODE ---
 import matplotlib
-matplotlib.use('Agg') # Server එකේ චාට් අඳින්න මේක අනිවාර්යයි
+matplotlib.use('Agg')
 import mplfinance as mpf
 import google.generativeai as genai
 from datetime import datetime
@@ -59,7 +59,7 @@ def load_data():
 
 def save_full_state():
     data = st.session_state.to_dict()
-    serializable_data = {k: v for k, v in data.items() if k in ["bot_active", "daily_count", "last_reset_date", "signaled_coins", "history", "last_scan_block_id", "sent_morning", "sent_goodbye", "scan_log", "force_scan"]}
+    serializable_data = {k: v for k, v in data.items() if k in ["bot_active", "daily_count", "last_reset_date", "signaled_coins", "history", "last_scan_block_id", "sent_morning", "sent_goodbye", "scan_log", "force_scan", "coins"]}
     with open(DATA_FILE, "w") as f: json.dump(serializable_data, f)
 
 # --- TELEGRAM ---
@@ -115,14 +115,14 @@ def get_data(symbol):
         print(f"Data Error: {e}")
         return pd.DataFrame()
 
-# --- CHART GENERATION (FIXED) ---
+# --- CHART GENERATION ---
 def generate_chart_image(df, coin_name):
     filename = f"chart_{coin_name}.png"
     
     if 'Close' not in df.columns or 'Open' not in df.columns:
-        return None, f"Missing Columns. Found: {df.columns.tolist()}"
+        return None, f"Missing Columns"
     if len(df) < 5:
-        return None, "Not enough data points"
+        return None, "Not enough data"
 
     try:
         mc = mpf.make_marketcolors(up='#00ff00', down='#ff0000', inherit=True)
@@ -144,7 +144,6 @@ def generate_chart_image(df, coin_name):
             title=f"{coin_name} - 15m (AI Vision)",
             savefig=filename,
             figsize=(10, 6)
-            # REMOVED off_image=True as it caused the error
         )
         return filename, None
     except Exception as e:
@@ -194,7 +193,7 @@ def analyze_with_vision(df, coin_name):
     return sig, score, curr_close, atr, sl_long, sl_short, reason, chart_path
 
 # ==============================================================================
-# MAIN APP LOOP
+# MAIN APP LOOP (UI UPDATE)
 # ==============================================================================
 
 saved_data = load_data()
@@ -206,58 +205,78 @@ if 'force_scan' not in st.session_state: st.session_state.force_scan = False
 if 'coins' not in st.session_state:
     st.session_state.coins = ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "LTC", "DOT", "MATIC", "UNI", "BCH", "FIL", "NEAR", "ATOM", "ICP", "IMX", "APT"]
 
+# --- SIDEBAR DESIGN START ---
 st.sidebar.title("🎛️ Control Panel")
-
-# --- 🛠️ DIAGNOSTIC TEST BUTTON ---
-if st.sidebar.button("📡 Test Telegram & Chart (Diagnose)"):
-    st.sidebar.info("1. Fetching BTC Data...")
-    test_df = get_data("BTC")
-    
-    if not test_df.empty:
-        st.sidebar.write(f"✅ Data Found: {test_df.shape}")
-        st.sidebar.info("2. Generating Chart...")
-        
-        c_path, c_err = generate_chart_image(test_df, "BTC")
-        
-        if c_path:
-            st.sidebar.success("✅ Chart Generated!")
-            st.sidebar.info("3. Sending to Telegram...")
-            send_telegram("💎<b>GHOST DIAGNOSTIC TEST</b>💎\n\n✅ Chart Generation: SUCCESS\n🚀 System is Ready", image_path=c_path)
-            st.sidebar.success("Sent! Check Telegram.")
-            st.image(c_path, caption="Preview", use_column_width=True)
-        else:
-            st.sidebar.error("❌ CHART FAILED!")
-            st.sidebar.error(f"Error Details: {c_err}")
-    else:
-        st.sidebar.error("❌ Failed to fetch BTC data (Empty DataFrame)")
-
-st.sidebar.markdown("---")
-coins_list = st.session_state.coins
 current_time = datetime.now(lz)
 is_within_hours = START_HOUR <= current_time.hour < END_HOUR
 
+# Status Indicator
 status_color = "red"; status_text = "STOPPED 🔴"
 if st.session_state.bot_active:
     if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
-        status_color = "orange"; status_text = "DAILY LIMIT REACHED 🛑"
+        status_color = "orange"; status_text = "DAILY LIMIT 🛑"
     elif is_within_hours:
         status_color = "green"; status_text = "RUNNING 🟢"
     else:
         status_color = "orange"; status_text = "SLEEPING 💤"
 
-st.sidebar.markdown(f"### Status: **:{status_color}[{status_text}]**")
-st.sidebar.caption("Mode: 👁️ AI VISION (Gemini Pro)")
+st.sidebar.markdown(f"**Status:** :{status_color}[{status_text}]")
+st.sidebar.caption(f"Time: {START_HOUR}:00 - {END_HOUR}:00")
+st.sidebar.metric("Daily Signals", f"{st.session_state.daily_count} / {MAX_DAILY_SIGNALS}")
+st.sidebar.caption("Leverage: Dynamic (Risk Based)")
 
+if st.session_state.signaled_coins:
+    st.sidebar.caption(f"Today: {', '.join(st.session_state.signaled_coins)}")
+
+# Main Controls
 col1, col2 = st.sidebar.columns(2)
-if col1.button("▶️ START"): st.session_state.bot_active = True; save_full_state(); st.rerun()
-if col2.button("⏹️ STOP"): st.session_state.bot_active = False; save_full_state(); st.rerun()
+if col1.button("▶️ START", use_container_width=True): st.session_state.bot_active = True; save_full_state(); st.rerun()
+if col2.button("⏹️ STOP", use_container_width=True): st.session_state.bot_active = False; save_full_state(); st.rerun()
 
-if st.sidebar.button("⚡ FORCE SCAN NOW"): st.session_state.force_scan = True; st.rerun()
-if st.sidebar.button("🔄 RESET LIMIT"): st.session_state.daily_count = 0; st.session_state.signaled_coins = []; save_full_state(); st.rerun()
+st.sidebar.markdown("---")
+if st.sidebar.button("⚡ FORCE SCAN NOW", use_container_width=True): st.session_state.force_scan = True; st.rerun()
 
-st.title("👻 GHOST PROTOCOL 4.1 : STABLE")
-st.write("Engine: **Google Gemini 1.5 Pro** | Status: **Chart Engine Fixed** ✅")
+if st.sidebar.button("🔄 RESET LIMIT (Admin)", use_container_width=True):
+    st.session_state.daily_count = 0
+    st.session_state.signaled_coins = []
+    st.session_state.sent_goodbye = False
+    save_full_state()
+    st.rerun()
 
+st.sidebar.markdown("---")
+# Coin Manager
+st.sidebar.subheader("🪙 Coin Manager")
+new_coin = st.sidebar.text_input("Add Coin (e.g. SUI)", "").upper()
+if st.sidebar.button("➕ Add Coin"):
+    if new_coin and new_coin not in st.session_state.coins:
+        st.session_state.coins.append(new_coin); save_full_state(); st.success(f"{new_coin} Added!")
+
+remove_coin = st.sidebar.selectbox("Remove Coin", st.session_state.coins)
+if st.sidebar.button("🗑️ Remove Selected"):
+    if remove_coin in st.session_state.coins:
+        st.session_state.coins.remove(remove_coin); save_full_state(); st.rerun()
+
+st.sidebar.markdown("---")
+# Test Button at Bottom
+if st.sidebar.button("📡 Test Telegram & Chart", use_container_width=True):
+    st.sidebar.info("Generating BTC Chart...")
+    test_df = get_data("BTC")
+    if not test_df.empty:
+        c_path, c_err = generate_chart_image(test_df, "BTC")
+        if c_path:
+            send_telegram("💎<b>GHOST TEST</b>💎\n\n✅ System Online", image_path=c_path)
+            st.sidebar.success("Sent!")
+        else:
+            st.sidebar.error(f"Failed: {c_err}")
+    else:
+        st.sidebar.error("Failed to fetch BTC")
+
+# --- MAIN CONTENT ---
+st.title("👻 GHOST PROTOCOL 4.2 : UI UPDATE")
+st.write("Engine: **Google Gemini 1.5 Pro** | Strategy: **Vision AI**")
+st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
+
+coins_list = st.session_state.coins
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
 
 def run_scan():
@@ -272,7 +291,7 @@ def run_scan():
             progress_bar.progress((i + 1) / len(coins_list)); continue
 
         try:
-            status_area.markdown(f"📸 **Capturing Chart:** `{coin}` ...")
+            status_area.markdown(f"📸 **Capturing:** `{coin}` ...")
             df = get_data(coin)
             if df.empty: continue 
 
