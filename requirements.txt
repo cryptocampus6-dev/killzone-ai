@@ -8,5 +8,5 @@ requests
 cryptography
 pytz
 yfinance
-pip install google
-generativeai mplfinance
+google-generativeai
+mplfinance
