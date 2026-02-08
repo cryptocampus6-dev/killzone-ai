@@ -8,9 +8,10 @@ import os
 import json
 import yfinance as yf
 
-# --- FIX: MATPLOTLIB HEADLESS MODE ---
+# --- FIX: MATPLOTLIB HEADLESS MODE & ADVANCED PLOTTING ---
 import matplotlib
 matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 import mplfinance as mpf
 import google.generativeai as genai
 from datetime import datetime
@@ -28,7 +29,7 @@ START_HOUR = 7
 END_HOUR = 21
 MAX_DAILY_SIGNALS = 8
 DATA_FILE = "bot_data.json"
-RISK_PER_TRADE_ROI = 60 # Max Loss % allowed per trade
+RISK_PER_TRADE_ROI = 60 
 
 # Setup Gemini AI
 try:
@@ -60,19 +61,7 @@ def load_data():
     return default
 
 def save_full_state():
-    serializable_data = {
-        "bot_active": st.session_state.get("bot_active", True),
-        "daily_count": st.session_state.get("daily_count", 0),
-        "last_reset_date": st.session_state.get("last_reset_date", ""),
-        "signaled_coins": st.session_state.get("signaled_coins", []),
-        "history": st.session_state.get("history", []),
-        "last_scan_block_id": st.session_state.get("last_scan_block_id", -1),
-        "sent_morning": st.session_state.get("sent_morning", False),
-        "sent_goodbye": st.session_state.get("sent_goodbye", False),
-        "scan_log": st.session_state.get("scan_log", ""),
-        "force_scan": st.session_state.get("force_scan", False),
-        "coins": st.session_state.get("coins", [])
-    }
+    serializable_data = {k: v for k, v in st.session_state.items() if k in ["bot_active", "daily_count", "last_reset_date", "signaled_coins", "history", "last_scan_block_id", "sent_morning", "sent_goodbye", "scan_log", "force_scan", "coins"]}
     with open(DATA_FILE, "w") as f: json.dump(serializable_data, f)
 
 # --- TELEGRAM ---
@@ -97,11 +86,8 @@ def get_data(symbol):
         ticker = f"{symbol}-USD"
         df = yf.download(ticker, period="2d", interval="15m", progress=False) 
         if df.empty: return pd.DataFrame()
-
         df = df.reset_index()
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.droplevel(1)
-        
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.droplevel(1)
         cols_map = {}
         for col in df.columns:
             c = str(col).lower()
@@ -111,58 +97,93 @@ def get_data(symbol):
             elif 'low' in c: cols_map[col] = 'Low'
             elif 'close' in c: cols_map[col] = 'Close'
             elif 'volume' in c: cols_map[col] = 'Volume'
-            
         df = df.rename(columns=cols_map)
-        
-        if 'Date' in df.columns:
-            df = df.set_index('Date')
-        
+        if 'Date' in df.columns: df = df.set_index('Date')
         numeric_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
         for c in numeric_cols:
-            if c in df.columns:
-                df[c] = pd.to_numeric(df[c], errors='coerce')
-                
+            if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce')
         return df.dropna()
-            
     except Exception as e:
         print(f"Data Error: {e}")
         return pd.DataFrame()
 
-# --- CHART GENERATION ---
-def generate_chart_image(df, coin_name):
-    filename = f"chart_{coin_name}.png"
-    if 'Close' not in df.columns or 'Open' not in df.columns: return None, f"Missing Columns"
-    if len(df) < 5: return None, "Not enough data"
+# ==============================================================================
+# 🎨 ADVANCED CHART GENERATION (THE PRO LOOK)
+# ==============================================================================
 
+# 1. Simple Chart for AI Analysis (Clean, no lines)
+def generate_ai_chart(df, coin_name):
+    filename = f"ai_chart_{coin_name}.png"
+    if len(df) < 30: return None
     try:
+        # Use a clean style for AI
         mc = mpf.make_marketcolors(up='#00ff00', down='#ff0000', inherit=True)
-        s  = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True)
-        ema200 = df['Close'].ewm(span=200).mean()
-        plot_df = df.tail(60)
-        
-        add_plots = []
-        if len(plot_df) == len(ema200.tail(60)):
-            add_plots = [mpf.make_addplot(ema200.tail(60), color='blue', width=1.5)]
+        s = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True)
+        mpf.plot(df.tail(60), type='candle', style=s, volume=False, title=f"{coin_name} - AI Input", savefig=filename, figsize=(8, 5))
+        return filename
+    except: return None
 
-        mpf.plot(plot_df, type='candle', style=s, volume=True, addplot=add_plots, savefig=filename, figsize=(10, 6))
-        return filename, None
-    except Exception as e:
-        return None, str(e)
+# 2. Pro Chart for Telegram (With Watermark, Entry, SL, TP lines)
+def generate_telegram_chart(df, coin_name, signal_type, entry, sl, tps):
+    filename = f"tg_chart_{coin_name}_{int(time.time())}.png"
+    plot_df = df.tail(80) # Show a bit more history
+    if len(plot_df) < 30: return None
+
+    # Custom Style mimicking TradingView Dark
+    mc = mpf.make_marketcolors(up='#089981', down='#F23645', edge='inherit', wick='inherit', volume='in', inherit=True)
+    s = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True, facecolor='#131722', figcolor='#131722', rc={'axes.labelcolor': 'white', 'xtick.color': 'white', 'ytick.color': 'white', 'text.color': 'white'})
+
+    # Define Horizontal Lines (Entry, SL, TPs)
+    hlines_data = [entry, sl] + tps
+    # Colors: Entry(Blue), SL(Red), TPs(Green)
+    hlines_colors = ['#2962FF', '#F23645'] + ['#089981'] * len(tps)
+    hlines_styles = ['-'] + ['--'] * (len(tps) + 1) # Solid for Entry, dashed for others
+
+    fig, axes = mpf.plot(plot_df, type='candle', style=s, volume=False,
+                         hlines=dict(hlines=hlines_data, colors=hlines_colors, linewidths=1.5, linestyles=hlines_styles),
+                         title=f"\n{coin_name} - 15m | {signal_type} Setup",
+                         figsize=(12, 7), returnfig=True, tight_layout=True)
+    
+    ax_main = axes[0]
+
+    # --- ADD LABELS ---
+    p_fmt = ".2f" if entry > 50 else ".4f"
+    
+    # Entry Label
+    ax_main.text(len(plot_df)+1, entry, f" Entry: {entry:{p_fmt}}", color='#2962FF', fontsize=10, fontweight='bold', va='center')
+    
+    # SL Label
+    ax_main.text(len(plot_df)+1, sl, f" SL: {sl:{p_fmt}}", color='#F23645', fontsize=10, va='center')
+    
+    # TP Labels
+    for i, tp_price in enumerate(tps):
+        ax_main.text(len(plot_df)+1, tp_price, f" TP{i+1}: {tp_price:{p_fmt}}", color='#089981', fontsize=9, va='center')
+
+    # --- ADD WATERMARK (CRYPTO CAMPUS) ---
+    # Place in the center of the chart
+    mid_x = len(plot_df) / 2
+    mid_y = (plot_df['High'].max() + plot_df['Low'].min()) / 2
+    ax_main.text(mid_x, mid_y, "CRYPTO CAMPUS", fontsize=40, color='white', 
+                 alpha=0.15, ha='center', va='center', fontweight='bold', rotation=0, zorder=0)
+
+    # Save the complex figure
+    fig.savefig(filename, facecolor=fig.get_facecolor())
+    plt.close(fig) # Close plot to free memory
+    return filename
 
 # --- AI ANALYSIS ---
 def analyze_with_vision(df, coin_name):
-    if df.empty or len(df) < 30: return "NEUTRAL", 0, 0, 0, 0, 0, "No Data", None
-    chart_path, error_msg = generate_chart_image(df, coin_name)
-    if not chart_path: return "NEUTRAL", 0, 0, 0, 0, 0, f"Chart Err: {error_msg}", None
+    # Generate simple chart for AI
+    ai_chart_path = generate_ai_chart(df, coin_name)
+    if not ai_chart_path: return "NEUTRAL", 0, 0, 0, 0, 0, "Chart Error", None
 
     try:
-        img = genai.upload_file(chart_path)
+        img = genai.upload_file(ai_chart_path)
         prompt = """
-        You are an elite Crypto Trader specializing in Malaysian SNR, ICT (Smart Money Concepts), Liquidity, and Price Action.
-        Analyze this 15-minute chart image.
-        Output ONLY a JSON string:
-        {"signal": "LONG", "score": 90, "reason": "Liquidity Sweep + MSS + FVG rejection"}
-        Possible signals: "LONG", "SHORT", "NEUTRAL". Score: 0-100 (>85 for signal).
+        You are an elite Crypto Trader (SMC/ICT/Price Action). Analyze this 15m chart.
+        Look for: Liquidity Sweeps, MSS, Order Blocks, strong rejection wicks.
+        Output ONLY JSON: {"signal": "LONG", "score": 90, "reason": "Brief reason"}
+        Score > 85 for signal.
         """
         response = model.generate_content([prompt, img])
         result = json.loads(response.text.strip().replace("```json", "").replace("```", ""))
@@ -170,62 +191,42 @@ def analyze_with_vision(df, coin_name):
         sig = result.get("signal", "NEUTRAL")
         score = int(result.get("score", 0))
         reason = result.get("reason", "AI Analysis")
-        os.remove(chart_path)
+        os.remove(ai_chart_path) # Clean AI chart
     except Exception as e:
-        return "NEUTRAL", 0, 0, 0, 0, 0, f"AI Err: {str(e)[:20]}", chart_path
+        if os.path.exists(ai_chart_path): os.remove(ai_chart_path)
+        return "NEUTRAL", 0, 0, 0, 0, 0, f"AI Err: {str(e)[:20]}", None
 
-    # Leverage calc
+    # Data for Signal
     curr_close = df['Close'].iloc[-1]
     atr = (df['High'].iloc[-1] - df['Low'].iloc[-1])
-    sl = curr_close - (atr * 2) if sig == "LONG" else curr_close + (atr * 2)
+    # Logical SL placement (behind structure)
+    sl = curr_close - (atr * 2.5) if sig == "LONG" else curr_close + (atr * 2.5)
+    
     sl_dist = abs(curr_close - sl) / curr_close * 100
     leverage = int(max(5, min(RISK_PER_TRADE_ROI / sl_dist, 75))) if sl_dist > 0 else 20
 
-    return (sig if score > 85 else "NEUTRAL"), score, curr_close, leverage, sl, 0, reason, chart_path
+    return (sig if score > 85 else "NEUTRAL"), score, curr_close, leverage, sl, 0, reason, None
 
-# --- FORMATTING FUNCTION (EXACT VIP FORMAT) ---
+# --- FORMATTING FUNCTION ---
 def format_vip_message(coin, sig, price, sl, tps, leverage):
     p_fmt = ".4f" if price < 50 else ".2f"
-    
     roi_1 = round(abs(tps[0]-price)/price*100*leverage, 1)
     roi_2 = round(abs(tps[1]-price)/price*100*leverage, 1)
     roi_3 = round(abs(tps[2]-price)/price*100*leverage, 1)
     roi_4 = round(abs(tps[3]-price)/price*100*leverage, 1)
-    
     sl_roi = round(abs(price-sl)/price*100*leverage, 1)
-    
-    risk = abs(price - sl)
-    reward = abs(tps[3] - price)
+    risk = abs(price - sl); reward = abs(tps[3] - price)
     rr = round(reward / risk, 1) if risk > 0 else 0
-    
-    if sig == "LONG":
-        direction_text = "🟢Long"
-    else:
-        direction_text = "🔴Short"
+    direction_text = "🟢Long" if sig == "LONG" else "🔴Short"
 
     msg = (
-        f"💎<b>CRYPTO CAMPUS VIP</b>💎\n\n"
-        f"🌟 <b>{coin} USDT</b>\n\n"
-        f"{direction_text}\n\n"
-        f"🚀<b>Isolated</b>\n"
-        f"📈<b>Leverage {leverage}X</b>\n\n"
-        f"💥<b>Entry {price:{p_fmt}}</b>\n\n"
-        f"✅<b>Take Profit</b>\n\n"
-        f"1️⃣ {tps[0]:{p_fmt}} ({roi_1}%)\n"
-        f"2️⃣ {tps[1]:{p_fmt}} ({roi_2}%)\n"
-        f"3️⃣ {tps[2]:{p_fmt}} ({roi_3}%)\n"
-        f"4️⃣ {tps[3]:{p_fmt}} ({roi_4}%)\n\n"
-        f"⭕ <b>Stop Loss {sl:{p_fmt}} ({sl_roi}%)</b>\n\n"
-        f"📝 <b>RR 1:{rr}</b>\n\n"
-        f"⚠️ <b>Margin Use 1%-5%(Trading Plan Use)</b>"
+        f"💎<b>CRYPTO CAMPUS VIP</b>💎\n\n🌟 <b>{coin} USDT</b>\n\n{direction_text}\n\n🚀<b>Isolated</b>\n📈<b>Leverage {leverage}X</b>\n\n💥<b>Entry {price:{p_fmt}}</b>\n\n✅<b>Take Profit</b>\n\n1️⃣ {tps[0]:{p_fmt}} ({roi_1}%)\n2️⃣ {tps[1]:{p_fmt}} ({roi_2}%)\n3️⃣ {tps[2]:{p_fmt}} ({roi_3}%)\n4️⃣ {tps[3]:{p_fmt}} ({roi_4}%)\n\n⭕ <b>Stop Loss {sl:{p_fmt}} ({sl_roi}%)</b>\n\n📝 <b>RR 1:{rr}</b>\n\n⚠️ <b>Margin Use 1%-5%(Trading Plan Use)</b>"
     )
     return msg
 
 # ==============================================================================
 # MAIN UI
 # ==============================================================================
-
-# Init
 saved_data = load_data()
 for k, v in saved_data.items():
     if k not in st.session_state: st.session_state[k] = v
@@ -253,49 +254,43 @@ if st.sidebar.button("⚡ FORCE SCAN NOW", use_container_width=True): st.session
 if st.sidebar.button("🔄 RESET LIMIT (Admin)", use_container_width=True):
     st.session_state.daily_count = 0; st.session_state.signaled_coins = []; st.session_state.sent_goodbye = False; save_full_state(); st.rerun()
 
-# Coin Manager
 st.sidebar.markdown("---")
 st.sidebar.subheader("🪙 Coin Manager")
 new_coin = st.sidebar.text_input("Add Coin", "").upper()
 if st.sidebar.button("➕ Add Coin"):
-    if new_coin and new_coin not in st.session_state.coins:
-        st.session_state.coins.append(new_coin); save_full_state(); st.rerun()
-
+    if new_coin and new_coin not in st.session_state.coins: st.session_state.coins.append(new_coin); save_full_state(); st.rerun()
 rem_coin = st.sidebar.selectbox("Remove Coin", st.session_state.coins)
 if st.sidebar.button("🗑️ Remove"):
-    if rem_coin in st.session_state.coins:
-        st.session_state.coins.remove(rem_coin); save_full_state(); st.rerun()
+    if rem_coin in st.session_state.coins: st.session_state.coins.remove(rem_coin); save_full_state(); st.rerun()
 
-# Test Button (UPDATED WITH REAL VIP FORMAT)
+# --- PRO TEST BUTTON ---
 st.sidebar.markdown("---")
-if st.sidebar.button("📡 Test Telegram & Chart", use_container_width=True):
-    st.sidebar.info("Generating BTC Chart...")
+if st.sidebar.button("📡 Test Pro Chart & Signal", use_container_width=True):
+    st.sidebar.info("Generating BTC Pro Chart...")
     test_df = get_data("BTC")
     if not test_df.empty:
-        c_path, _ = generate_chart_image(test_df, "BTC")
-        if c_path:
-            # 1. Send Sticker
-            send_telegram("", is_sticker=True)
-            time.sleep(1)
-            
-            # 2. Generate Real-Like Test Data
-            price = test_df['Close'].iloc[-1]
-            sl = price * 0.995 # 0.5% SL
-            risk = abs(price - sl)
-            tps = [price + risk*1, price + risk*2, price + risk*3, price + risk*4]
-            lev = 50
-            
-            # 3. Format Message
-            msg = format_vip_message("BTC", "LONG", price, sl, tps, leverage=lev)
-            
-            # 4. Send
-            send_telegram(msg, image_path=c_path)
-            st.sidebar.success("VIP Test Signal Sent!")
-        else:
-            st.sidebar.error("Failed to generate chart")
+        # Generate Test Signal Data
+        price = test_df['Close'].iloc[-1]
+        sl = price * 0.99 # 1% SL
+        risk = abs(price - sl)
+        tps = [price + risk*1, price + risk*2, price + risk*3, price + risk*4]
+        lev = 50
+        sig_type = "LONG"
+
+        # GENERATE THE PRO CHART
+        tg_chart_path = generate_telegram_chart(test_df, "BTC", sig_type, price, sl, tps)
+        
+        if tg_chart_path:
+            send_telegram("", is_sticker=True); time.sleep(1)
+            msg = format_vip_message("BTC", sig_type, price, sl, tps, leverage=lev)
+            send_telegram(msg, image_path=tg_chart_path)
+            st.sidebar.success("Pro Signal Sent!")
+            os.remove(tg_chart_path) # Clean up
+        else: st.sidebar.error("Failed to generate Pro Chart")
+    else: st.sidebar.error("Failed to fetch BTC")
 
 # --- MAIN ---
-st.title("👻 GHOST PROTOCOL 5.1 : VIP FINAL")
+st.title("👻 GHOST PROTOCOL 5.2 : PRO CHARTING")
 st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
 
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
@@ -311,20 +306,25 @@ def run_scan():
         df = get_data(coin)
         if df.empty: continue 
 
-        sig, score, price, leverage, sl, _, reason, chart_path = analyze_with_vision(df, coin)
+        # 1. AI Analysis (uses simple chart internally)
+        sig, score, price, leverage, sl, _, reason, _ = analyze_with_vision(df, coin)
         
         if sig != "NEUTRAL":
-            send_telegram("", is_sticker=True); time.sleep(2)
+            status_area.markdown(f"🎯 **Signal Found!** Generating Pro Chart for {coin}...")
             # TP calc
             risk = abs(price - sl)
-            if sig == "LONG":
-                tps = [price+risk, price+2*risk, price+3*risk, price+4*risk]
-            else:
-                tps = [price-risk, price-2*risk, price-3*risk, price-4*risk]
+            if sig == "LONG": tps = [price+risk, price+2*risk, price+3*risk, price+4*risk]
+            else: tps = [price-risk, price-2*risk, price-3*risk, price-4*risk]
             
-            msg = format_vip_message(coin, sig, price, sl, tps, leverage)
-            send_telegram(msg, image_path=chart_path)
-            
+            # 2. Generate PRO Chart for Telegram
+            tg_chart_path = generate_telegram_chart(df, coin, sig, price, sl, tps)
+
+            if tg_chart_path:
+                send_telegram("", is_sticker=True); time.sleep(2)
+                msg = format_vip_message(coin, sig, price, sl, tps, leverage)
+                send_telegram(msg, image_path=tg_chart_path)
+                os.remove(tg_chart_path) # Clean up chart
+
             st.session_state.history.insert(0, {"Time": datetime.now(lz).strftime("%H:%M"), "Coin": coin, "Signal": sig})
             st.session_state.daily_count += 1; st.session_state.signaled_coins.append(coin); save_full_state()
             if st.session_state.daily_count >= MAX_DAILY_SIGNALS: break
