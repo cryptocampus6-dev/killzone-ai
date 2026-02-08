@@ -109,7 +109,7 @@ def get_data(symbol):
         return pd.DataFrame()
 
 # ==============================================================================
-# 🎨 REAL TRADINGVIEW STYLE CHART (DARK MODE + POSITION TOOL)
+# 🎨 REAL TRADINGVIEW STYLE CHART (EXACT COLORS & LABELS)
 # ==============================================================================
 
 # 1. Simple Chart for AI Analysis
@@ -123,14 +123,14 @@ def generate_ai_chart(df, coin_name):
         return filename
     except: return None
 
-# 2. PRO CHART GENERATION (The exact Photo 2 look)
+# 2. PRO CHART GENERATION (The exact Photo 2 look with correct colors)
 def generate_telegram_chart(df, coin_name, signal_type, entry, sl, tps):
     filename = f"tg_chart_{coin_name}_{int(time.time())}.png"
-    plot_df = df.tail(50) # Show last 50 candles
+    plot_df = df.tail(50)
     if len(plot_df) < 20: return None
 
     # --- DARK THEME STYLE ---
-    # TradingView colors: up=tealish green, down=red
+    # TradingView candle colors
     mc = mpf.make_marketcolors(up='#26a69a', down='#ef5350', edge='inherit', wick='inherit', volume='in', inherit=True)
     # Dark background, white text
     s = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True, 
@@ -142,27 +142,26 @@ def generate_telegram_chart(df, coin_name, signal_type, entry, sl, tps):
     ax = axes[0]
 
     # --- 1. DRAW REALISTIC POSITION TOOL ---
-    # Start tool from the *last* candle index
     x_start = len(plot_df) - 1
-    # Extend it 8 units to the right (not full width)
     width = 8 
-    
     tp_max = tps[-1]
     
-    # TradingView Tool Colors (Teal profit, Red loss) with transparency
-    color_profit = '#00897Baa' 
-    color_loss = '#FF5252aa'   
-    
+    # EXACT TRADINGVIEW TOOL COLORS (with transparency)
+    # Profit: Teal Green
+    color_profit_fill = '#22ab94aa' 
+    color_profit_solid = '#22ab94'
+    # Loss: Salmon Red
+    color_loss_fill = '#f23645aa'   
+    color_loss_solid = '#f23645'
+    # Entry: Neutral Grey
+    color_entry = '#787b86'
+
     if signal_type == "LONG":
-        # Profit Box starts at Entry, goes up
-        rect_profit = patches.Rectangle((x_start, entry), width, tp_max - entry, linewidth=0, edgecolor='none', facecolor=color_profit)
-        # Loss Box starts at SL, goes up to Entry
-        rect_loss = patches.Rectangle((x_start, sl), width, entry - sl, linewidth=0, edgecolor='none', facecolor=color_loss)
+        rect_profit = patches.Rectangle((x_start, entry), width, tp_max - entry, linewidth=0, edgecolor='none', facecolor=color_profit_fill)
+        rect_loss = patches.Rectangle((x_start, sl), width, entry - sl, linewidth=0, edgecolor='none', facecolor=color_loss_fill)
     else: # SHORT
-        # Profit Box starts at TP Max, goes up to Entry
-        rect_profit = patches.Rectangle((x_start, tp_max), width, entry - tp_max, linewidth=0, edgecolor='none', facecolor=color_profit)
-        # Loss Box starts at Entry, goes up to SL
-        rect_loss = patches.Rectangle((x_start, entry), width, sl - entry, linewidth=0, edgecolor='none', facecolor=color_loss)
+        rect_profit = patches.Rectangle((x_start, tp_max), width, entry - tp_max, linewidth=0, edgecolor='none', facecolor=color_profit_fill)
+        rect_loss = patches.Rectangle((x_start, entry), width, sl - entry, linewidth=0, edgecolor='none', facecolor=color_loss_fill)
 
     ax.add_patch(rect_profit)
     ax.add_patch(rect_loss)
@@ -170,24 +169,23 @@ def generate_telegram_chart(df, coin_name, signal_type, entry, sl, tps):
     # --- 2. DRAW COLORED PRICE TAGS ---
     p_fmt = ".2f" if entry > 10 else ".4f"
     
-    def add_price_tag(price, color, text, text_color='white'):
+    def add_price_tag(price, color, text):
         # Draw faint line
         ax.axhline(price, color=color, linestyle='--', linewidth=0.8, alpha=0.6)
         # Draw Tag box on the right axis
         ax.text(len(plot_df) + width + 0.2, price, f" {text} {price:{p_fmt}} ", 
-                color=text_color, fontsize=9, fontweight='bold', va='center', ha='left',
+                color='white', fontsize=9, fontweight='bold', va='center', ha='left',
                 bbox=dict(facecolor=color, edgecolor=color, boxstyle='square,pad=0.2'))
 
-    # Entry Tag (Blue/Grey)
-    add_price_tag(entry, '#2962FF', 'ENTRY')
+    # Entry Tag (Grey)
+    add_price_tag(entry, color_entry, 'ENTRY')
     
-    # SL Tag (Matching Loss Box Red)
-    add_price_tag(sl, '#FF5252', 'SL')
+    # SL Tag (Red)
+    add_price_tag(sl, color_loss_solid, 'SL')
     
-    # TP Tags (Matching Profit Box Teal)
-    # Only showing TP1 and TP4 for cleanliness, like real TV tools often do
-    add_price_tag(tps[0], '#00897B', 'TP1')
-    add_price_tag(tps[-1], '#00897B', 'TP4')
+    # TP Tags (Teal Green)
+    add_price_tag(tps[0], color_profit_solid, 'TP1')
+    add_price_tag(tps[-1], color_profit_solid, 'TP4')
 
     # --- 3. WATERMARK ---
     mid_x = len(plot_df) / 2
@@ -318,7 +316,7 @@ if st.sidebar.button("📡 Test Pro Chart & Signal", use_container_width=True):
     else: st.sidebar.error("Failed to fetch BTC")
 
 # --- MAIN ---
-st.title("👻 GHOST PROTOCOL 5.5 : TRADINGVIEW EDITION")
+st.title("👻 GHOST PROTOCOL 5.6 : PERFECT MATCH")
 st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
 
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
