@@ -7,23 +7,34 @@ import pytz
 import os
 import json
 import yfinance as yf
-import numpy as np
+import mplfinance as mpf
+import google.generativeai as genai
 from datetime import datetime
 
-# --- USER SETTINGS ---
+# ==============================================================================
+# 🔐 USER SETTINGS (UPDATED)
+# ==============================================================================
+# ඔයා එවපු අලුත් API Key එක මෙතනට දැම්මා
+GEMINI_API_KEY = "AIzaSyAQhJmvE8VkImSSN-Aiv98nOv_1prfD7QY" 
+
 TELEGRAM_BOT_TOKEN = "8524773131:AAG7YAYrzt9HYu34UhUJ0af_TDamhyndBas"
-CHANNEL_ID = "-1003731551541"
+
+# ඔයා එවපු අලුත් Test Channel ID එක (ඉස්සරහට - ලකුණ දැම්මා Telegram Format එකට)
+CHANNEL_ID = "-1003534299054"
+
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWlMq--iOTVBE4BA"
 
 # --- CONFIGURATION ---
 START_HOUR = 7
 END_HOUR = 21
 MAX_DAILY_SIGNALS = 8
-SCORE_THRESHOLD = 85
-TARGET_SL_ROI = 60
 DATA_FILE = "bot_data.json"
 
-st.set_page_config(page_title="Ghost Protocol Dashboard", page_icon="👻", layout="wide")
+# Setup Gemini AI
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash')
+
+st.set_page_config(page_title="Ghost Protocol AI Vision", page_icon="👁️", layout="wide")
 lz = pytz.timezone('Asia/Colombo')
 
 # --- DATA MANAGEMENT ---
@@ -62,87 +73,97 @@ def send_telegram(msg, is_sticker=False):
     except: pass
 
 # --- DATA FETCHING ---
-def get_data(symbol, limit=200):
+def get_data(symbol):
     try:
         ticker = f"{symbol}-USD"
-        df = yf.download(ticker, period="5d", interval="15m", progress=False)
+        df = yf.download(ticker, period="2d", interval="15m", progress=False) 
         if not df.empty:
             df = df.reset_index()
             if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.droplevel(1)
-            df = df.rename(columns={'Datetime': 'timestamp', 'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume'})
+            df = df.rename(columns={'Datetime': 'Date', 'Open': 'Open', 'High': 'High', 'Low': 'Low', 'Close': 'Close', 'Volume': 'Volume'})
+            df = df.set_index('Date')
             return df
     except: return pd.DataFrame()
     return pd.DataFrame()
 
 # ==============================================================================
-# 🧠 STRATEGY: HEIKIN-ASHI + SUPERTREND + ADX
+# 👁️ CORE: AI VISION ANALYSIS
 # ==============================================================================
 
-def analyze_ultimate(df, coin_name):
-    if df.empty or len(df) < 50: return "NEUTRAL", 0, 0, 0, 0, 0, []
+def analyze_with_vision(df, coin_name):
+    if df.empty or len(df) < 30: return "NEUTRAL", 0, 0, 0, 0, 0, "No Data"
 
-    # Heikin-Ashi Calc
-    df_ha = df.copy()
-    df_ha['ha_close'] = (df['open'] + df['high'] + df['low'] + df['close']) / 4
-    ha_open = [df['open'].iloc[0]]
-    for i in range(1, len(df)):
-        ha_open.append((ha_open[-1] + df_ha['ha_close'].iloc[i-1]) / 2)
-    df_ha['ha_open'] = ha_open
+    # 1. Generate Chart Image (TradingView Style)
+    chart_filename = "temp_chart.png"
+    mc = mpf.make_marketcolors(up='#00ff00', down='#ff0000', inherit=True)
+    s  = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True)
     
-    # Indicators
-    supertrend = ta.supertrend(df['high'], df['low'], df['close'], length=10, multiplier=3)
-    st_dir_col = supertrend.columns[1] 
-    df = pd.concat([df, supertrend], axis=1)
-    
-    adx = ta.adx(df['high'], df['low'], df['close'], length=14)
-    df = pd.concat([df, adx], axis=1)
-    
-    df['atr'] = ta.atr(df['high'], df['low'], df['close'], 14)
+    ema200 = df['Close'].ewm(span=200).mean()
+    add_plots = [mpf.make_addplot(ema200[-60:], color='blue', width=1.5)] if len(df) > 200 else []
 
-    curr = df.iloc[-1]
-    curr_ha_close = df_ha['ha_close'].iloc[-1]
-    curr_ha_open = df_ha['ha_open'].iloc[-1]
-    curr_st_dir = curr[st_dir_col] 
-    curr_adx = curr['ADX_14']
-    
-    methods_hit = []
-    score = 50 
+    try:
+        mpf.plot(
+            df.tail(60),
+            type='candle',
+            style=s,
+            volume=True,
+            addplot=add_plots,
+            title=f"{coin_name} - 15m Chart",
+            savefig=chart_filename,
+            figsize=(10, 6),
+            off_image=True
+        )
+    except:
+        return "NEUTRAL", 0, 0, 0, 0, 0, "Chart Error"
 
-    # Logic
-    ha_green = curr_ha_close > curr_ha_open
-    ha_red = curr_ha_close < curr_ha_open
-    st_bull = curr_st_dir == 1
-    st_bear = curr_st_dir == -1
-    strong_trend = curr_adx > 25
-    avg_vol = df['volume'].rolling(20).mean().iloc[-1]
-    good_vol = curr['volume'] > avg_vol
-
-    # Scoring
-    if st_bull:
-        score += 20
-        if ha_green: score += 20; methods_hit.append("HA Bull")
-        if strong_trend: score += 20; methods_hit.append("ADX > 25")
-        if good_vol: score += 10; methods_hit.append("Volume")
-        if curr['close'] > ta.ema(df['close'], 200).iloc[-1]: score += 10; methods_hit.append("Trend")
+    # 2. Ask Gemini AI
+    try:
+        img = genai.upload_file(chart_filename)
         
-    elif st_bear:
-        score -= 20
-        if ha_red: score -= 20; methods_hit.append("HA Bear")
-        if strong_trend: score -= 20; methods_hit.append("ADX > 25")
-        if good_vol: score -= 10; methods_hit.append("Volume")
-        if curr['close'] < ta.ema(df['close'], 200).iloc[-1]: score -= 10; methods_hit.append("Trend")
+        prompt = """
+        You are a professional crypto day trader using Price Action and Market Structure.
+        Analyze this 15-minute chart image.
+        
+        Key Rules:
+        1. Look for CLEAR setups only (Breakouts, Rejections, Supply/Demand zones).
+        2. Identify the immediate trend (based on the candles shown).
+        3. Ignore minor noise. Look for big moves.
+        4. Blue line is EMA 200. Price above = Bullish bias, Price below = Bearish bias.
+        
+        Output ONLY a JSON string like this:
+        {"signal": "LONG", "score": 90, "reason": "Strong breakout above resistance with volume"}
+        
+        Possible signals: "LONG", "SHORT", "NEUTRAL".
+        Score: 0-100 (Only give >85 if it's a perfect setup).
+        Reason: Max 10 words.
+        """
+        
+        response = model.generate_content([prompt, img])
+        result_text = response.text.strip().replace("```json", "").replace("```", "")
+        result = json.loads(result_text)
+        
+        sig = result.get("signal", "NEUTRAL")
+        score = int(result.get("score", 0))
+        reason = result.get("reason", "AI Analysis")
 
-    sig = "NEUTRAL"
-    final_score = score
-    if score >= 85:
-        sig = "LONG"; final_score = min(score, 100)
-    elif score <= 15:
-        sig = "SHORT"; final_score = min(100 - score, 100)
+        # Clean up
+        try: os.remove(chart_filename)
+        except: pass
 
-    sl_long = curr['close'] - (curr['atr'] * 2.0)
-    sl_short = curr['close'] + (curr['atr'] * 2.0)
+    except Exception as e:
+        print(f"AI Error: {e}")
+        return "NEUTRAL", 0, 0, 0, 0, 0, "AI Error"
 
-    return sig, final_score, curr['close'], curr['atr'], sl_long, sl_short, methods_hit
+    # 3. Calculate Levels
+    curr_close = df['Close'].iloc[-1]
+    atr = (df['High'].iloc[-1] - df['Low'].iloc[-1])
+    
+    sl_long = curr_close - (atr * 2)
+    sl_short = curr_close + (atr * 2)
+
+    if score < 85: sig = "NEUTRAL"
+
+    return sig, score, curr_close, atr, sl_long, sl_short, reason
 
 # ==============================================================================
 # MAIN APP LOOP
@@ -153,9 +174,7 @@ for k, v in saved_data.items():
     if k not in st.session_state: st.session_state[k] = v
 
 if 'coins' not in st.session_state:
-    st.session_state.coins = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "AVAX", "DOT", "LINK", "TRX", "MATIC", "LTC", "BCH", "UNI", "NEAR", "APT", "ICP", "FIL", "ATOM", "XLM", "DOGE", "SHIB", "PEPE", "WIF", "BONK", "FLOKI", "MEME", "PEOPLE", "BOME", "DOGS", "NOT", "TURBO", "BRETT", "POPCAT", "MYRO", "LADYS", "SATS", "ORDI", "RENDER", "FET", "WLD", "ARKM", "GRT", "THETA", "AGIX", "OCEAN", "PHB", "SUI", "SEI", "ARB", "OP", "TIA", "INJ", "KAS", "TON", "FTM", "ALGO", "MANTA", "STRK", "BLUR", "ZRO", "ZK", "PYTH", "JUP", "ENS", "CRV", "AAVE", "MKR", "SNX", "COMP", "1INCH", "RUNE", "DYDX", "GMX", "LDO", "PENDLE", "EGLD", "SAND", "MANA", "AXS", "GALA", "CHZ", "FLOW", "EOS", "NEO", "QTUM", "IOTA", "KAVA", "MINA", "QNT", "HBAR", "VET", "ZEC", "DASH", "XMR", "ROSE", "HOT", "RVN", "BAT", "ENJ", "ZIL", "IOST"]
-if 'scan_log' not in st.session_state: st.session_state.scan_log = ""
-if 'force_scan' not in st.session_state: st.session_state.force_scan = False
+    st.session_state.coins = ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "LTC", "DOT", "MATIC", "UNI", "BCH", "FIL", "NEAR", "ATOM", "ICP", "IMX", "APT"]
 
 st.sidebar.title("🎛️ Control Panel")
 coins_list = st.session_state.coins
@@ -172,63 +191,27 @@ if st.session_state.bot_active:
         status_color = "orange"; status_text = "SLEEPING 💤"
 
 st.sidebar.markdown(f"### Status: **:{status_color}[{status_text}]**")
-st.sidebar.caption(f"Time: {START_HOUR}:00 - {END_HOUR}:00")
-st.sidebar.metric("Daily Signals", f"{st.session_state.daily_count} / {MAX_DAILY_SIGNALS}")
-st.sidebar.caption("Leverage: Dynamic (Risk Based)")
-
-if st.session_state.signaled_coins:
-    st.sidebar.caption(f"Today's Signals: {', '.join(st.session_state.signaled_coins)}")
+st.sidebar.caption("Mode: 👁️ AI VISION (Gemini Pro)")
 
 col1, col2 = st.sidebar.columns(2)
 if col1.button("▶️ START"): st.session_state.bot_active = True; save_full_state(); st.rerun()
 if col2.button("⏹️ STOP"): st.session_state.bot_active = False; save_full_state(); st.rerun()
 
-st.sidebar.markdown("---")
 if st.sidebar.button("⚡ FORCE SCAN NOW"): st.session_state.force_scan = True; st.rerun()
+if st.sidebar.button("🔄 RESET LIMIT"): st.session_state.daily_count = 0; st.session_state.signaled_coins = []; save_full_state(); st.rerun()
 
-if st.sidebar.button("🔄 RESET LIMIT (Admin)"):
-    st.session_state.daily_count = 0
-    st.session_state.signaled_coins = []
-    st.session_state.sent_goodbye = False
-    save_full_state()
-    st.rerun()
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("🪙 Coin Manager")
-new_coin = st.sidebar.text_input("Add Coin (e.g. SUI)", "").upper()
-if st.sidebar.button("➕ Add Coin"):
-    if new_coin and new_coin not in st.session_state.coins:
-        st.session_state.coins.append(new_coin); st.success(f"{new_coin} Added!")
-
-remove_coin = st.sidebar.selectbox("Remove Coin", st.session_state.coins)
-if st.sidebar.button("🗑️ Remove Selected"):
-    if remove_coin in st.session_state.coins:
-        st.session_state.coins.remove(remove_coin); st.rerun()
-
-st.sidebar.markdown("---")
-if st.sidebar.button("📡 Test Telegram"):
-    send_telegram("", is_sticker=True); time.sleep(2)
-    test_msg = f"💎<b>CRYPTO CAMPUS VIP</b>💎\n\n🌑 <b>BTC USDT</b>\n\n🟢<b>Long</b>\n\n🚀<b>Isolated</b>\n📈<b>Leverage 25X</b>\n\n💥<b>Entry 95000.00</b>\n\n✅<b>Take Profit</b>\n\n1️⃣ 96000.00 (26.3%)\n2️⃣ 97000.00 (52.6%)\n\n⭕ <b>Stop Loss 94000.00 (60.0%)</b>\n\n📝 <b>RR 1:2.0</b>\n\n⚠️ <b>Margin Use 1%-5%(Trading Plan Use)</b>"
-    send_telegram(test_msg); st.sidebar.success("Test Sent!")
-
-st.title("👻 GHOST PROTOCOL 2.0 : ELITE TRADER")
-st.write("Methods Active: **Heikin-Ashi Smoothed, SuperTrend (Trend), ADX (>25 Strength), Volume Flow, ATR Dynamic Stop, Trend Following System**")
-st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
+st.title("👻 GHOST PROTOCOL 3.0 : AI VISION")
+st.write("Engine: **Google Gemini 1.5 Pro (Visual Analysis)** | Strategy: **Pure Price Action & Structure**")
 
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
 
 def run_scan():
-    if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
-        if not st.session_state.sent_goodbye:
-            send_telegram("🚀 Good Bye Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋")
-            st.session_state.sent_goodbye = True; save_full_state()
-        st.warning("⚠️ Daily Signal Limit Reached."); return
+    if st.session_state.daily_count >= MAX_DAILY_SIGNALS: return
 
-    st.markdown(f"### 🔄 Scanning {len(coins_list)} Coins...")
+    st.markdown(f"### 👁️ AI Scanning {len(coins_list)} Coins... (This takes time)")
     progress_bar = st.progress(0); status_area = st.empty()
     
     log_container = st.container()
-    log_container.write("---")
     live_log = log_container.empty()
     if 'scan_log' not in st.session_state: st.session_state.scan_log = ""
 
@@ -237,139 +220,90 @@ def run_scan():
             progress_bar.progress((i + 1) / len(coins_list)); continue
 
         try:
-            status_area.markdown(f"👀 **Checking:** `{coin}` ...")
+            status_area.markdown(f"📸 **Capturing Chart:** `{coin}` ...")
             
             df = get_data(coin)
-            
-            if df.empty:
-                st.session_state.scan_log = f"`{coin}`: ⚠️ No Data | " + st.session_state.scan_log
-                live_log.markdown(f"#### 📝 Live Scores:\n{st.session_state.scan_log}")
-                time.sleep(0.5)
-                continue 
+            if df.empty: continue 
 
-            sig, score, price, atr, sl_long, sl_short, methods = analyze_ultimate(df, coin)
+            sig, score, price, atr, sl_long, sl_short, reason = analyze_with_vision(df, coin)
             
             if score >= 85: score_color = "green"
             elif score <= 15: score_color = "red"
             else: score_color = "orange"
             
-            status_area.markdown(f"👀 **Checked:** `{coin}` | 📊 **Score:** :{score_color}[`{score}/100`]")
+            status_area.markdown(f"🤖 **AI Analyzing:** `{coin}` | 🧠 **Verdict:** :{score_color}[{sig} ({score}%)]")
             
-            st.session_state.scan_log = f"`{coin}`: :{score_color}[{score}] | " + st.session_state.scan_log
-            if len(st.session_state.scan_log) > 2000: st.session_state.scan_log = st.session_state.scan_log[:2000]
-            live_log.markdown(f"#### 📝 Live Scores:\n{st.session_state.scan_log}")
-            
-            time.sleep(0.5) 
+            log_entry = f"`{coin}`: {sig} ({score}%) - {reason} | "
+            st.session_state.scan_log = log_entry + st.session_state.scan_log
+            if len(st.session_state.scan_log) > 1000: st.session_state.scan_log = st.session_state.scan_log[:1000]
+            live_log.markdown(f"#### 📝 AI Thoughts:\n{st.session_state.scan_log}")
 
             if sig != "NEUTRAL":
                 if st.session_state.daily_count < MAX_DAILY_SIGNALS:
-                    send_telegram("", is_sticker=True); time.sleep(5)
+                    send_telegram("", is_sticker=True); time.sleep(3)
                     
                     if sig == "LONG":
                         sl = sl_long 
-                        if (price - sl) / price < 0.005: sl = price - (atr * 1.5)
-                        dist_percent = (price - sl) / price
-                    else: # SHORT
-                        sl = sl_short 
-                        if (sl - price) / price < 0.005: sl = price + (atr * 1.5)
-                        dist_percent = (sl - price) / price
-                    
-                    if dist_percent > 0: ideal_leverage = int(TARGET_SL_ROI / (dist_percent * 100))
-                    else: ideal_leverage = 20
-                    dynamic_leverage = max(5, min(ideal_leverage, 50))
-                    
-                    if sig == "LONG":
-                        dist = price - sl; tp_dist = dist * 2.0
-                        tps = [price + (tp_dist * x * 0.6) for x in range(1, 5)] 
-                        emoji_circle = "🟢"; direction_txt = "Long"
+                        tp_dist = (price - sl) * 2
+                        tps = [price + (tp_dist * 0.6 * x) for x in range(1, 5)]
+                        emoji = "🟢"; side = "Long"
                     else:
-                        dist = sl - price; tp_dist = dist * 2.0
-                        tps = [price - (tp_dist * x * 0.6) for x in range(1, 5)]
-                        emoji_circle = "🔴"; direction_txt = "Short"
-                    
-                    rr = round(abs(tps[3]-price)/abs(price-sl), 2)
-                    roi_1 = round(abs(tps[0]-price)/price*100*dynamic_leverage, 1)
-                    roi_2 = round(abs(tps[1]-price)/price*100*dynamic_leverage, 1)
-                    roi_3 = round(abs(tps[2]-price)/price*100*dynamic_leverage, 1)
-                    roi_4 = round(abs(tps[3]-price)/price*100*dynamic_leverage, 1)
-                    sl_roi = round(abs(price-sl)/price*100*dynamic_leverage, 1)
-                    
-                    # --- Formatting Logic Updated Here ---
-                    if price < 1: p_fmt = ".8f"
-                    elif price < 20: p_fmt = ".4f" # For DOT, XRP, etc.
-                    else: p_fmt = ".2f"
-                    # -------------------------------------
+                        sl = sl_short
+                        tp_dist = (sl - price) * 2
+                        tps = [price - (tp_dist * 0.6 * x) for x in range(1, 5)]
+                        emoji = "🔴"; side = "Short"
 
+                    p_fmt = ".4f" if price < 50 else ".2f"
+                    
                     msg = (
-                        f"💎<b>CRYPTO CAMPUS VIP</b>💎\n\n"
-                        f"🌑 <b>{coin} USDT</b>\n\n"
-                        f"{emoji_circle}<b>{direction_txt}</b>\n\n"
-                        f"🚀<b>Isolated</b>\n"
-                        f"📈<b>Leverage {dynamic_leverage}X</b>\n\n"
+                        f"💎<b>CRYPTO CAMPUS AI VISION</b>💎\n\n"
+                        f"👁️ <b>{coin} USDT</b>\n\n"
+                        f"{emoji} <b>{side} Signal</b>\n"
+                        f"🧠 <b>Reason:</b> {reason}\n\n"
                         f"💥<b>Entry {price:{p_fmt}}</b>\n\n"
-                        f"✅<b>Take Profit</b>\n\n"
-                        f"1️⃣ {tps[0]:{p_fmt}} ({roi_1}%)\n"
-                        f"2️⃣ {tps[1]:{p_fmt}} ({roi_2}%)\n"
-                        f"3️⃣ {tps[2]:{p_fmt}} ({roi_3}%)\n"
-                        f"4️⃣ {tps[3]:{p_fmt}} ({roi_4}%)\n\n"
-                        f"⭕ <b>Stop Loss {sl:{p_fmt}} ({sl_roi}%)</b>\n\n"
-                        f"📝 <b>RR 1:{rr}</b>\n\n"
-                        f"⚠️ <b>Margin Use 1%-5%(Trading Plan Use)</b>"
+                        f"✅<b>Targets:</b>\n"
+                        f"1️⃣ {tps[0]:{p_fmt}}\n"
+                        f"2️⃣ {tps[1]:{p_fmt}}\n"
+                        f"3️⃣ {tps[2]:{p_fmt}}\n\n"
+                        f"⭕ <b>Stop Loss {sl:{p_fmt}}</b>\n\n"
+                        f"⚠️ <b>Risk: 1-2% Only (AI Test)</b>"
                     )
                     
                     send_telegram(msg)
-                    st.session_state.history.insert(0, {"Time": current_time.strftime("%H:%M"), "Coin": coin, "Signal": sig, "Methods": ", ".join(methods)})
+                    st.session_state.history.insert(0, {"Time": current_time.strftime("%H:%M"), "Coin": coin, "Signal": sig, "Reason": reason})
                     st.session_state.daily_count += 1
                     st.session_state.signaled_coins.append(coin)
                     save_full_state()
                     
-                    if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
-                        if not st.session_state.sent_goodbye:
-                            send_telegram("🚀 Good Bye Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋")
-                            st.session_state.sent_goodbye = True; save_full_state()
-                        break
+                    if st.session_state.daily_count >= MAX_DAILY_SIGNALS: break
+
         except Exception as e:
-            st.session_state.scan_log = f"`{coin}`: ⚠️ Error | " + st.session_state.scan_log
-            live_log.markdown(f"#### 📝 Live Scores:\n{st.session_state.scan_log}")
-            time.sleep(0.5)
+            print(f"Error {coin}: {e}")
+            time.sleep(1)
         
+        time.sleep(4) 
         progress_bar.progress((i + 1) / len(coins_list))
     
-    status_area.empty(); st.success("Scan Complete!"); return
+    status_area.empty(); st.success("AI Scan Complete!"); return
 
 with tab1:
     if st.session_state.bot_active:
-        if is_within_hours and not st.session_state.sent_morning:
-            send_telegram("☀️ Good Morning Traders! ඔයාලා හැමෝටම ජයග්‍රාහී සුබ දවසක් වේවා! 🚀")
-            st.session_state.sent_morning = True; save_full_state()
-
-        if current_time.hour >= END_HOUR and not st.session_state.sent_goodbye:
-            if st.session_state.daily_count > 0:
-                msg = "🚀 Good Bye Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋"
-            else:
-                msg = "🛑 **Market Update:** අද Market එකේ අපේ Strategy එකට ගැලපෙන High Probability Setups තිබුනේ නෑ (Choppy Market). 📉\n\nබොරු Trades දාලා Loss කරගන්නවට වඩා, ඉවසීමෙන් Capital එක ආරක්ෂා කරගන්න එක තමයි Professional Trading කියන්නේ. 🧠💎\n\nහෙට අලුත් දවසකින් හමුවෙමු! Good Night Traders! 👋"
-            send_telegram(msg); st.session_state.sent_goodbye = True; save_full_state()
-
-        if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
-            st.warning("🛑 Daily Limit Reached. Sleeping..."); time.sleep(60); st.rerun()
-        
-        elif is_within_hours:
+        if is_within_hours:
             current_block_id = current_time.hour * 4 + (current_time.minute // 15)
-            is_start_of_block = (current_time.minute % 15) <= 5 
-            if (current_block_id != st.session_state.last_scan_block_id) and is_start_of_block:
-                st.session_state.last_scan_block_id = current_block_id; save_full_state(); run_scan(); st.rerun()
-            elif st.session_state.force_scan:
-                run_scan(); st.session_state.force_scan = False; st.rerun()
+            if (current_block_id != st.session_state.last_scan_block_id) or st.session_state.force_scan:
+                st.session_state.last_scan_block_id = current_block_id
+                st.session_state.force_scan = False
+                save_full_state()
+                run_scan()
+                st.rerun()
             else:
-                next_min = 15 - (current_time.minute % 15)
-                # Show Last Log
-                if st.session_state.scan_log: st.markdown(f"#### 📝 Last Scan Scores:\n{st.session_state.scan_log}")
-                st.info(f"⏳ **Monitoring...** (Next scan in {next_min} mins)")
-                time.sleep(5); st.rerun()
+                if st.session_state.scan_log: st.markdown(f"#### 📝 AI Thoughts:\n{st.session_state.scan_log}")
+                st.info("⏳ AI is watching the markets... (Next scan in 15 mins)")
+                time.sleep(10); st.rerun()
         else:
-            st.warning(f"💤 SLEEPING (Resumes {START_HOUR}:00)"); time.sleep(10); st.rerun()
-    else: st.error("⚠️ STOPPED"); time.sleep(2)
+            st.warning("💤 AI Sleeping..."); time.sleep(10); st.rerun()
+    else: st.error("⚠️ AI STOPPED"); time.sleep(2)
 
 with tab2:
     if st.session_state.history: st.table(pd.DataFrame(st.session_state.history))
-    else: st.info("No signals yet.")
+    else: st.info("No AI signals yet.")
