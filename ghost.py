@@ -19,7 +19,7 @@ GEMINI_API_KEY = "AIzaSyAQhJmvE8VkImSSN-Aiv98nOv_1prfD7QY"
 
 TELEGRAM_BOT_TOKEN = "8524773131:AAG7YAYrzt9HYu34UhUJ0af_TDamhyndBas"
 
-# ඔයා එවපු අලුත් Test Channel ID එක (ඉස්සරහට - ලකුණ දැම්මා Telegram Format එකට)
+# ඔයා එවපු අලුත් Test Channel ID එක (ඉස්සරහට -100 දැම්මා Telegram Format එකට)
 CHANNEL_ID = "-1003534299054"
 
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWlMq--iOTVBE4BA"
@@ -31,8 +31,11 @@ MAX_DAILY_SIGNALS = 8
 DATA_FILE = "bot_data.json"
 
 # Setup Gemini AI
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+try:
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+except Exception as e:
+    st.error(f"API Key Error: {e}")
 
 st.set_page_config(page_title="Ghost Protocol AI Vision", page_icon="👁️", layout="wide")
 lz = pytz.timezone('Asia/Colombo')
@@ -76,6 +79,7 @@ def send_telegram(msg, is_sticker=False):
 def get_data(symbol):
     try:
         ticker = f"{symbol}-USD"
+        # Download 2 days of data to generate a proper chart
         df = yf.download(ticker, period="2d", interval="15m", progress=False) 
         if not df.empty:
             df = df.reset_index()
@@ -95,15 +99,18 @@ def analyze_with_vision(df, coin_name):
 
     # 1. Generate Chart Image (TradingView Style)
     chart_filename = "temp_chart.png"
+    # Colors: Green for Up, Red for Down
     mc = mpf.make_marketcolors(up='#00ff00', down='#ff0000', inherit=True)
     s  = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True)
     
+    # Calculate EMA 200 for the AI to see trend
     ema200 = df['Close'].ewm(span=200).mean()
     add_plots = [mpf.make_addplot(ema200[-60:], color='blue', width=1.5)] if len(df) > 200 else []
 
     try:
+        # Plotting logic
         mpf.plot(
-            df.tail(60),
+            df.tail(60), # Show last 60 candles
             type='candle',
             style=s,
             volume=True,
@@ -113,13 +120,15 @@ def analyze_with_vision(df, coin_name):
             figsize=(10, 6),
             off_image=True
         )
-    except:
-        return "NEUTRAL", 0, 0, 0, 0, 0, "Chart Error"
+    except Exception as e:
+        print(f"Chart Error: {e}")
+        return "NEUTRAL", 0, 0, 0, 0, 0, "Chart Gen Error"
 
     # 2. Ask Gemini AI
     try:
         img = genai.upload_file(chart_filename)
         
+        # This PROMPT is the "Brain" of the bot
         prompt = """
         You are a professional crypto day trader using Price Action and Market Structure.
         Analyze this 15-minute chart image.
@@ -146,7 +155,7 @@ def analyze_with_vision(df, coin_name):
         score = int(result.get("score", 0))
         reason = result.get("reason", "AI Analysis")
 
-        # Clean up
+        # Clean up the image file
         try: os.remove(chart_filename)
         except: pass
 
@@ -154,7 +163,7 @@ def analyze_with_vision(df, coin_name):
         print(f"AI Error: {e}")
         return "NEUTRAL", 0, 0, 0, 0, 0, "AI Error"
 
-    # 3. Calculate Levels
+    # 3. Calculate Levels (TP/SL)
     curr_close = df['Close'].iloc[-1]
     atr = (df['High'].iloc[-1] - df['Low'].iloc[-1])
     
@@ -174,6 +183,7 @@ for k, v in saved_data.items():
     if k not in st.session_state: st.session_state[k] = v
 
 if 'coins' not in st.session_state:
+    # Reduced coin list for AI speed (Can add more later)
     st.session_state.coins = ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "LTC", "DOT", "MATIC", "UNI", "BCH", "FIL", "NEAR", "ATOM", "ICP", "IMX", "APT"]
 
 st.sidebar.title("🎛️ Control Panel")
@@ -225,6 +235,7 @@ def run_scan():
             df = get_data(coin)
             if df.empty: continue 
 
+            # CALL AI FUNCTION
             sig, score, price, atr, sl_long, sl_short, reason = analyze_with_vision(df, coin)
             
             if score >= 85: score_color = "green"
@@ -281,6 +292,7 @@ def run_scan():
             print(f"Error {coin}: {e}")
             time.sleep(1)
         
+        # Pause slightly to respect Gemini rate limits
         time.sleep(4) 
         progress_bar.progress((i + 1) / len(coins_list))
     
