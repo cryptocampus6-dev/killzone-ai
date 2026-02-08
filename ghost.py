@@ -8,9 +8,9 @@ import os
 import json
 import yfinance as yf
 
-# --- FIX: MATPLOTLIB HEADLESS MODE ---
+# --- FIX: MATPLOTLIB HEADLESS MODE (CRITICAL) ---
 import matplotlib
-matplotlib.use('Agg') # Server එකේ චාට් අඳින්න මේක අනිවාර්යයි
+matplotlib.use('Agg') # This prevents "TclError" on servers
 import mplfinance as mpf
 import google.generativeai as genai
 from datetime import datetime
@@ -42,98 +42,110 @@ lz = pytz.timezone('Asia/Colombo')
 # --- DATA MANAGEMENT ---
 def load_data():
     default = {
-        "bot_active": True, 
-        "daily_count": 0, 
-        "last_reset_date": datetime.now(lz).strftime("%Y-%m-%d"),
-        "signaled_coins": [], 
-        "history": [], 
-        "last_scan_block_id": -1,
-        "sent_morning": False, 
-        "sent_goodbye": False,
-        "scan_log": "",
-        "force_scan": False
+        "bot_active": True, "daily_count": 0, "last_reset_date": datetime.now(lz).strftime("%Y-%m-%d"),
+        "signaled_coins": [], "history": [], "last_scan_block_id": -1,
+        "sent_morning": False, "sent_goodbye": False, "scan_log": "", "force_scan": False
     }
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r") as f:
                 data = json.load(f)
                 if data.get("last_reset_date") != datetime.now(lz).strftime("%Y-%m-%d"):
-                    data.update({
-                        "daily_count": 0, 
-                        "signaled_coins": [], 
-                        "last_reset_date": datetime.now(lz).strftime("%Y-%m-%d"), 
-                        "sent_morning": False, 
-                        "sent_goodbye": False,
-                        "scan_log": ""
-                    })
+                    data.update({"daily_count": 0, "signaled_coins": [], "last_reset_date": datetime.now(lz).strftime("%Y-%m-%d"), "sent_morning": False, "sent_goodbye": False, "scan_log": ""})
                     with open(DATA_FILE, "w") as fw: json.dump(data, fw)
                 return data
         except: return default
     return default
 
 def save_full_state():
-    data = {
-        "bot_active": st.session_state.bot_active, 
-        "daily_count": st.session_state.daily_count,
-        "last_reset_date": st.session_state.last_reset_date, 
-        "signaled_coins": st.session_state.signaled_coins,
-        "history": st.session_state.history, 
-        "last_scan_block_id": st.session_state.last_scan_block_id,
-        "sent_morning": st.session_state.sent_morning, 
-        "sent_goodbye": st.session_state.sent_goodbye,
-        "scan_log": st.session_state.scan_log,
-        "force_scan": st.session_state.force_scan
+    data = st.session_state.to_dict()
+    # Filter only serializable keys if needed, but simple dump usually works for basic types
+    serializable_data = {
+        "bot_active": st.session_state.get("bot_active", True),
+        "daily_count": st.session_state.get("daily_count", 0),
+        "last_reset_date": st.session_state.get("last_reset_date", ""),
+        "signaled_coins": st.session_state.get("signaled_coins", []),
+        "history": st.session_state.get("history", []),
+        "last_scan_block_id": st.session_state.get("last_scan_block_id", -1),
+        "sent_morning": st.session_state.get("sent_morning", False),
+        "sent_goodbye": st.session_state.get("sent_goodbye", False),
+        "scan_log": st.session_state.get("scan_log", ""),
+        "force_scan": st.session_state.get("force_scan", False)
     }
-    with open(DATA_FILE, "w") as f: json.dump(data, f)
+    with open(DATA_FILE, "w") as f: json.dump(serializable_data, f)
 
-# --- TELEGRAM FUNCTION (UPDATED FOR PHOTOS) ---
+# --- TELEGRAM ---
 def send_telegram(msg, is_sticker=False, image_path=None):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/"
     try:
         if is_sticker:
             requests.post(url + "sendSticker", data={"chat_id": CHANNEL_ID, "sticker": STICKER_ID})
         elif image_path and os.path.exists(image_path):
-            # Send Photo with Caption
             with open(image_path, 'rb') as img_file:
                 files = {'photo': img_file}
                 data = {'chat_id': CHANNEL_ID, 'caption': msg, 'parse_mode': 'HTML'}
                 requests.post(url + "sendPhoto", files=files, data=data)
         else:
-            # Text Only
             requests.post(url + "sendMessage", data={"chat_id": CHANNEL_ID, "text": msg, "parse_mode": "HTML"})
     except Exception as e:
         print(f"Telegram Error: {e}")
 
-# --- DATA FETCHING ---
+# --- DATA FETCHING (ROBUST) ---
 def get_data(symbol):
     try:
         ticker = f"{symbol}-USD"
         df = yf.download(ticker, period="2d", interval="15m", progress=False) 
-        if not df.empty:
-            df = df.reset_index()
-            if isinstance(df.columns, pd.MultiIndex): 
-                try: df.columns = df.columns.droplevel(1)
-                except: pass
-            
-            required_cols = {'Datetime': 'Date', 'Open': 'Open', 'High': 'High', 'Low': 'Low', 'Close': 'Close', 'Volume': 'Volume'}
-            df = df.rename(columns=required_cols)
-            if 'Date' in df.columns: df = df.set_index('Date')
-            return df
-    except: return pd.DataFrame()
-    return pd.DataFrame()
+        if df.empty: return pd.DataFrame()
 
-# --- CHART GENERATION (HELPER) ---
+        df = df.reset_index()
+        # Handle MultiIndex columns (yfinance new version issue)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.droplevel(1)
+        
+        # Rename columns standardly
+        # Check if 'Datetime' exists, usually it's the index name or column
+        cols_map = {}
+        for col in df.columns:
+            if 'Datetime' in str(col) or 'Date' in str(col):
+                cols_map[col] = 'Date'
+            elif 'Open' in str(col): cols_map[col] = 'Open'
+            elif 'High' in str(col): cols_map[col] = 'High'
+            elif 'Low' in str(col): cols_map[col] = 'Low'
+            elif 'Close' in str(col): cols_map[col] = 'Close'
+            elif 'Volume' in str(col): cols_map[col] = 'Volume'
+            
+        df = df.rename(columns=cols_map)
+        
+        if 'Date' in df.columns:
+            df = df.set_index('Date')
+            return df
+        else:
+            return pd.DataFrame() # Failed to find Date column
+            
+    except Exception as e:
+        print(f"Data Error: {e}")
+        return pd.DataFrame()
+
+# --- CHART GENERATION (DEBUG ENABLED) ---
 def generate_chart_image(df, coin_name):
     filename = f"chart_{coin_name}.png"
-    mc = mpf.make_marketcolors(up='#00ff00', down='#ff0000', inherit=True)
-    s  = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True)
     
-    ema200 = df['Close'].ewm(span=200).mean()
-    add_plots = [mpf.make_addplot(ema200[-60:], color='blue', width=1.5)] if len(df) > 200 else []
+    # Verify Data
+    if 'Close' not in df.columns or 'Open' not in df.columns:
+        return None, "Missing Columns"
 
     try:
+        mc = mpf.make_marketcolors(up='#00ff00', down='#ff0000', inherit=True)
+        s  = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True)
+        
+        ema200 = df['Close'].ewm(span=200).mean()
+        # Ensure plot data length matches
+        plot_df = df.tail(60)
+        
+        add_plots = [mpf.make_addplot(ema200.tail(60), color='blue', width=1.5)]
+
         mpf.plot(
-            df.tail(60),
+            plot_df,
             type='candle',
             style=s,
             volume=True,
@@ -143,9 +155,9 @@ def generate_chart_image(df, coin_name):
             figsize=(10, 6),
             off_image=True
         )
-        return filename
-    except:
-        return None
+        return filename, None # Success
+    except Exception as e:
+        return None, str(e) # Return the REAL error
 
 # ==============================================================================
 # 👁️ CORE: AI VISION ANALYSIS
@@ -155,8 +167,11 @@ def analyze_with_vision(df, coin_name):
     if df.empty or len(df) < 30: return "NEUTRAL", 0, 0, 0, 0, 0, "No Data", None
 
     # 1. Generate Chart
-    chart_path = generate_chart_image(df, coin_name)
-    if not chart_path: return "NEUTRAL", 0, 0, 0, 0, 0, "Chart Error", None
+    chart_path, error_msg = generate_chart_image(df, coin_name)
+    
+    # --- DEBUG: Show error if failed ---
+    if not chart_path: 
+        return "NEUTRAL", 0, 0, 0, 0, 0, f"Chart Err: {error_msg}", None
 
     # 2. Ask Gemini AI
     try:
@@ -164,17 +179,9 @@ def analyze_with_vision(df, coin_name):
         
         prompt = """
         You are a professional crypto day trader. Analyze this 15-minute chart image.
-        
-        Key Rules:
-        1. Identify the immediate trend (based on the candles shown).
-        2. Look for CLEAR setups (Breakouts, Rejections, Supply/Demand).
-        3. Blue line is EMA 200.
-        
         Output ONLY a JSON string:
         {"signal": "LONG", "score": 90, "reason": "Reason in 10 words"}
-        
-        Possible signals: "LONG", "SHORT", "NEUTRAL".
-        Score: 0-100 (Threshold 85).
+        Possible signals: "LONG", "SHORT", "NEUTRAL". Score: 0-100.
         """
         
         response = model.generate_content([prompt, img])
@@ -184,6 +191,10 @@ def analyze_with_vision(df, coin_name):
         sig = result.get("signal", "NEUTRAL")
         score = int(result.get("score", 0))
         reason = result.get("reason", "AI Analysis")
+        
+        # Cleanup
+        try: os.remove(chart_path)
+        except: pass
 
     except Exception as e:
         return "NEUTRAL", 0, 0, 0, 0, 0, f"AI Err: {str(e)[:20]}", chart_path
@@ -196,7 +207,6 @@ def analyze_with_vision(df, coin_name):
 
     if score < 85: sig = "NEUTRAL"
 
-    # Important: Return chart_path so we can send it to Telegram
     return sig, score, curr_close, atr, sl_long, sl_short, reason, chart_path
 
 # ==============================================================================
@@ -214,19 +224,18 @@ if 'coins' not in st.session_state:
 
 st.sidebar.title("🎛️ Control Panel")
 
-# --- TEST BUTTON LOGIC ---
-if st.sidebar.button("📡 Test Telegram with Chart"):
-    st.sidebar.info("Generating BTC Chart for Test...")
+# --- DEBUG TEST BUTTON ---
+if st.sidebar.button("📡 Test Telegram & Chart (DEBUG)"):
+    st.sidebar.warning("Generating BTC Chart...")
     test_df = get_data("BTC")
     if not test_df.empty:
-        test_chart = generate_chart_image(test_df, "BTC")
-        if test_chart:
-            test_msg = "💎<b>GHOST PROTOCOL TEST</b>💎\n\n📸 This is how the chart will look with the signal!\n\n🚀 <b>System is Online</b>"
-            send_telegram(test_msg, image_path=test_chart)
-            st.sidebar.success("Test Sent with Chart! 📸")
-            os.remove(test_chart) # Clean up
+        c_path, c_err = generate_chart_image(test_df, "BTC")
+        if c_path:
+            st.sidebar.success("Chart Generated! Sending...")
+            send_telegram("💎<b>TEST</b>: Chart Generation Success!", image_path=c_path)
+            st.image(c_path, caption="Generated Chart Preview") # Show in UI to verify
         else:
-            st.sidebar.error("Failed to generate test chart")
+            st.sidebar.error(f"Failed: {c_err}") # Show exact error
     else:
         st.sidebar.error("Failed to fetch BTC data")
 
@@ -254,8 +263,8 @@ if col2.button("⏹️ STOP"): st.session_state.bot_active = False; save_full_st
 if st.sidebar.button("⚡ FORCE SCAN NOW"): st.session_state.force_scan = True; st.rerun()
 if st.sidebar.button("🔄 RESET LIMIT"): st.session_state.daily_count = 0; st.session_state.signaled_coins = []; save_full_state(); st.rerun()
 
-st.title("👻 GHOST PROTOCOL 3.2 : AI VISION + CHARTS")
-st.write("Engine: **Google Gemini 1.5 Pro** | Feature: **Chart Image in Telegram** 📸")
+st.title("👻 GHOST PROTOCOL 3.3 : VISION DEBUGGER")
+st.write("Engine: **Google Gemini 1.5 Pro** | Status: **Debugging Mode**")
 
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
 
@@ -277,7 +286,6 @@ def run_scan():
             df = get_data(coin)
             if df.empty: continue 
 
-            # CALL AI FUNCTION (Now returns chart_path too)
             sig, score, price, atr, sl_long, sl_short, reason, chart_path = analyze_with_vision(df, coin)
             
             if score >= 85: score_color = "green"
@@ -286,6 +294,7 @@ def run_scan():
             
             status_area.markdown(f"🤖 **AI Analyzing:** `{coin}` | 🧠 **Verdict:** :{score_color}[{sig} ({score}%)]")
             
+            # Log the specific reason or error
             log_entry = f"`{coin}`: {sig} ({score}%) - {reason} | "
             st.session_state.scan_log = log_entry + st.session_state.scan_log
             if len(st.session_state.scan_log) > 1000: st.session_state.scan_log = st.session_state.scan_log[:1000]
@@ -318,10 +327,9 @@ def run_scan():
                         f"2️⃣ {tps[1]:{p_fmt}}\n"
                         f"3️⃣ {tps[2]:{p_fmt}}\n\n"
                         f"⭕ <b>Stop Loss {sl:{p_fmt}}</b>\n\n"
-                        f"⚠️ <b>Risk: 1-2% Only (AI Test)</b>"
+                        f"⚠️ <b>Risk: 1-2% Only</b>"
                     )
                     
-                    # Send with CHART IMAGE!
                     send_telegram(msg, image_path=chart_path)
                     
                     st.session_state.history.insert(0, {"Time": current_time.strftime("%H:%M"), "Coin": coin, "Signal": sig, "Reason": reason})
@@ -331,8 +339,6 @@ def run_scan():
                     
                     if st.session_state.daily_count >= MAX_DAILY_SIGNALS: break
             
-            # Clean up the chart file if it exists and wasn't sent (or even if sent)
-            # Actually, inside the loop, we should clean up after sending
             if chart_path and os.path.exists(chart_path):
                 os.remove(chart_path)
 
