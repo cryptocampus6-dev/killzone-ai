@@ -58,8 +58,9 @@ def load_data():
     return default
 
 def save_full_state():
+    # Simple save logic
     data = st.session_state.to_dict()
-    # Filter only serializable keys if needed, but simple dump usually works for basic types
+    # Filter only serializable keys if needed
     serializable_data = {
         "bot_active": st.session_state.get("bot_active", True),
         "daily_count": st.session_state.get("daily_count", 0),
@@ -103,7 +104,6 @@ def get_data(symbol):
             df.columns = df.columns.droplevel(1)
         
         # Rename columns standardly
-        # Check if 'Datetime' exists, usually it's the index name or column
         cols_map = {}
         for col in df.columns:
             if 'Datetime' in str(col) or 'Date' in str(col):
@@ -120,7 +120,7 @@ def get_data(symbol):
             df = df.set_index('Date')
             return df
         else:
-            return pd.DataFrame() # Failed to find Date column
+            return pd.DataFrame() 
             
     except Exception as e:
         print(f"Data Error: {e}")
@@ -132,7 +132,7 @@ def generate_chart_image(df, coin_name):
     
     # Verify Data
     if 'Close' not in df.columns or 'Open' not in df.columns:
-        return None, "Missing Columns"
+        return None, "Missing Columns: Data format error"
 
     try:
         mc = mpf.make_marketcolors(up='#00ff00', down='#ff0000', inherit=True)
