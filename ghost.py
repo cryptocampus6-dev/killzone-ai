@@ -25,9 +25,8 @@ TELEGRAM_BOT_TOKEN = "8524773131:AAG7YAYrzt9HYu34UhUJ0af_TDamhyndBas"
 CHANNEL_ID = "-1003534299054"
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWlMq--iOTVBE4BA"
 
-# --- CONFIGURATION ---
-START_HOUR = 7
-END_HOUR = 21
+# --- CONFIGURATION (NO SLEEP MODE) ---
+# START_HOUR සහ END_HOUR අයින් කළා. දැන් 24/7 වැඩ.
 MAX_DAILY_SIGNALS = 8
 DATA_FILE = "bot_data.json"
 RISK_PER_TRADE_ROI = 60 
@@ -109,100 +108,102 @@ def get_data(symbol):
         return pd.DataFrame()
 
 # ==============================================================================
-# 🎨 REAL TRADINGVIEW STYLE CHART (EXACT COLORS & LABELS)
+# 🎨 CUSTOM CHART DRAWING (CLEAN SILVER THEME)
 # ==============================================================================
 
-# 1. Simple Chart for AI Analysis
 def generate_ai_chart(df, coin_name):
     filename = f"ai_chart_{coin_name}.png"
     if len(df) < 30: return None
     try:
-        mc = mpf.make_marketcolors(up='#00ff00', down='#ff0000', inherit=True)
+        # AI sees simple black/white/red pattern
+        mc = mpf.make_marketcolors(up='#000000', down='#D73A3A', edge='inherit', wick='inherit', volume='in', inherit=True)
         s = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True)
         mpf.plot(df.tail(60), type='candle', style=s, volume=False, savefig=filename, figsize=(8, 5))
         return filename
     except: return None
 
-# 2. PRO CHART GENERATION (The exact Photo 2 look with correct colors)
 def generate_telegram_chart(df, coin_name, signal_type, entry, sl, tps):
     filename = f"tg_chart_{coin_name}_{int(time.time())}.png"
-    plot_df = df.tail(50)
+    plot_df = df.tail(50) 
     if len(plot_df) < 20: return None
 
-    # --- DARK THEME STYLE ---
-    # TradingView candle colors
-    mc = mpf.make_marketcolors(up='#26a69a', down='#ef5350', edge='inherit', wick='inherit', volume='in', inherit=True)
-    # Dark background, white text
-    s = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True, 
-                           facecolor='#131722', figcolor='#131722', 
-                           rc={'axes.labelcolor': 'white', 'xtick.color': 'white', 'ytick.color': 'white', 'text.color': 'white', 'axes.grid.axis': 'y'})
+    # --- THEME COLORS ---
+    bg_color = '#E6E6E6'       # Light Gray Background
+    text_color = '#000000'     # Black Text
+    candle_up = '#000000'      # Black Up Candle
+    candle_down = '#D73A3A'    # Red Down Candle
+    candle_border = '#000000'  # Black Border
+    
+    # Tool Colors
+    profit_color = '#9E9E9E'   # Medium Gray
+    loss_color = '#EFA9A9'     # Light Red/Pink
 
-    # Create Figure
+    # 1. Setup Style
+    mc = mpf.make_marketcolors(up=candle_up, down=candle_down, edge=candle_border, wick=candle_border, volume='in')
+    s = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True, 
+                           facecolor=bg_color, figcolor=bg_color, 
+                           rc={'axes.labelcolor': text_color, 'xtick.color': text_color, 
+                               'ytick.color': text_color, 'text.color': text_color, 
+                               'axes.grid.axis': 'y', 'grid.color': '#B0B0B0'})
+
+    # 2. Create Plot
     fig, axes = mpf.plot(plot_df, type='candle', style=s, volume=False, figsize=(12, 7), returnfig=True, tight_layout=True)
     ax = axes[0]
 
-    # --- 1. DRAW REALISTIC POSITION TOOL ---
+    # --- 3. DRAW POSITION TOOL (BOXES) ---
     x_start = len(plot_df) - 1
     width = 8 
     tp_max = tps[-1]
     
-    # EXACT TRADINGVIEW TOOL COLORS (with transparency)
-    # Profit: Teal Green
-    color_profit_fill = '#22ab94aa' 
-    color_profit_solid = '#22ab94'
-    # Loss: Salmon Red
-    color_loss_fill = '#f23645aa'   
-    color_loss_solid = '#f23645'
-    # Entry: Neutral Grey
-    color_entry = '#787b86'
-
     if signal_type == "LONG":
-        rect_profit = patches.Rectangle((x_start, entry), width, tp_max - entry, linewidth=0, edgecolor='none', facecolor=color_profit_fill)
-        rect_loss = patches.Rectangle((x_start, sl), width, entry - sl, linewidth=0, edgecolor='none', facecolor=color_loss_fill)
+        # Profit Box (Grey)
+        rect_profit = patches.Rectangle((x_start, entry), width, tp_max - entry, linewidth=0, edgecolor='none', facecolor=profit_color, alpha=0.5)
+        # Loss Box (Pink)
+        rect_loss = patches.Rectangle((x_start, sl), width, entry - sl, linewidth=0, edgecolor='none', facecolor=loss_color, alpha=0.5)
     else: # SHORT
-        rect_profit = patches.Rectangle((x_start, tp_max), width, entry - tp_max, linewidth=0, edgecolor='none', facecolor=color_profit_fill)
-        rect_loss = patches.Rectangle((x_start, entry), width, sl - entry, linewidth=0, edgecolor='none', facecolor=color_loss_fill)
+        # Profit Box (Grey)
+        rect_profit = patches.Rectangle((x_start, tp_max), width, entry - tp_max, linewidth=0, edgecolor='none', facecolor=profit_color, alpha=0.5)
+        # Loss Box (Pink)
+        rect_loss = patches.Rectangle((x_start, entry), width, sl - entry, linewidth=0, edgecolor='none', facecolor=loss_color, alpha=0.5)
 
     ax.add_patch(rect_profit)
     ax.add_patch(rect_loss)
 
-    # --- 2. DRAW COLORED PRICE TAGS ---
+    # --- 4. DRAW BLACK PRICE TAGS ---
     p_fmt = ".2f" if entry > 10 else ".4f"
     
-    def add_price_tag(price, color, text):
-        # Draw faint line
-        ax.axhline(price, color=color, linestyle='--', linewidth=0.8, alpha=0.6)
-        # Draw Tag box on the right axis
-        ax.text(len(plot_df) + width + 0.2, price, f" {text} {price:{p_fmt}} ", 
-                color='white', fontsize=9, fontweight='bold', va='center', ha='left',
-                bbox=dict(facecolor=color, edgecolor=color, boxstyle='square,pad=0.2'))
+    def add_price_tag(price, bg_col, label_text):
+        # Draw Black Line
+        ax.axhline(price, color='#000000', linestyle='--', linewidth=0.8, alpha=0.8)
+        # Draw Tag
+        ax.text(len(plot_df) + width + 0.2, price, f" {label_text} {price:{p_fmt}} ", 
+                color='#000000', fontsize=9, fontweight='bold', va='center', ha='left',
+                bbox=dict(facecolor=bg_col, edgecolor='#000000', boxstyle='square,pad=0.2', alpha=0.8))
 
-    # Entry Tag (Grey)
-    add_price_tag(entry, color_entry, 'ENTRY')
+    # Entry Tag
+    add_price_tag(entry, '#FFFFFF', 'ENTRY') # White bg for entry tag clarity
     
-    # SL Tag (Red)
-    add_price_tag(sl, color_loss_solid, 'SL')
+    # SL Tag (Matches Loss Box)
+    add_price_tag(sl, loss_color, 'SL')
     
-    # TP Tags (Teal Green)
-    add_price_tag(tps[0], color_profit_solid, 'TP1')
-    add_price_tag(tps[-1], color_profit_solid, 'TP4')
+    # TP Tags (Matches Profit Box)
+    add_price_tag(tps[0], profit_color, 'TP1')
+    add_price_tag(tps[-1], profit_color, 'TP4')
 
-    # --- 3. WATERMARK ---
+    # --- 5. WATERMARK (BLACK) ---
     mid_x = len(plot_df) / 2
     mid_y = (plot_df['High'].max() + plot_df['Low'].min()) / 2
-    ax.text(mid_x, mid_y, "CRYPTO CAMPUS VIP", fontsize=35, color='white', alpha=0.08, ha='center', va='center', fontweight='bold', zorder=0)
+    ax.text(mid_x, mid_y, "CRYPTO CAMPUS VIP", fontsize=35, color='#000000', alpha=0.08, ha='center', va='center', fontweight='bold', zorder=0)
 
-    # Title styling
-    ax.set_title(f"{coin_name} 15m · {signal_type} SETUP", color='white', fontsize=12, loc='left', pad=10)
+    # Title styling (Black)
+    ax.set_title(f"{coin_name} 15m · {signal_type} SETUP", color='#000000', fontsize=12, loc='left', pad=10)
     
-    # Save
     fig.savefig(filename, facecolor=fig.get_facecolor(), bbox_inches='tight', pad_inches=0.1)
     plt.close(fig)
     return filename
 
 # --- AI ANALYSIS ---
 def analyze_with_vision(df, coin_name):
-    # Generate simple chart for AI
     ai_chart_path = generate_ai_chart(df, coin_name)
     if not ai_chart_path: return "NEUTRAL", 0, 0, 0, 0, 0, "Chart Error", None
 
@@ -225,12 +226,9 @@ def analyze_with_vision(df, coin_name):
         if os.path.exists(ai_chart_path): os.remove(ai_chart_path)
         return "NEUTRAL", 0, 0, 0, 0, 0, f"AI Err: {str(e)[:20]}", None
 
-    # Data for Signal
     curr_close = df['Close'].iloc[-1]
     atr = (df['High'].iloc[-1] - df['Low'].iloc[-1])
-    # Logical SL placement
     sl = curr_close - (atr * 2.5) if sig == "LONG" else curr_close + (atr * 2.5)
-    
     sl_dist = abs(curr_close - sl) / curr_close * 100
     leverage = int(max(5, min(RISK_PER_TRADE_ROI / sl_dist, 75))) if sl_dist > 0 else 20
 
@@ -262,13 +260,14 @@ for k, v in saved_data.items():
 
 st.sidebar.title("🎛️ Control Panel")
 current_time = datetime.now(lz)
-is_within_hours = START_HOUR <= current_time.hour < END_HOUR
+# REMOVED START_HOUR CHECK - 24/7 ACTIVE
 
 status_color = "red"; status_text = "STOPPED 🔴"
 if st.session_state.bot_active:
-    if st.session_state.daily_count >= MAX_DAILY_SIGNALS: status_color = "orange"; status_text = "DAILY LIMIT 🛑"
-    elif is_within_hours: status_color = "green"; status_text = "RUNNING 🟢"
-    else: status_color = "orange"; status_text = "SLEEPING 💤"
+    if st.session_state.daily_count >= MAX_DAILY_SIGNALS: 
+        status_color = "orange"; status_text = "DAILY LIMIT 🛑"
+    else:
+        status_color = "green"; status_text = "RUNNING 🟢"
 
 st.sidebar.markdown(f"**Status:** :{status_color}[{status_text}]")
 st.sidebar.metric("Daily Signals", f"{st.session_state.daily_count} / {MAX_DAILY_SIGNALS}")
@@ -291,7 +290,6 @@ rem_coin = st.sidebar.selectbox("Remove Coin", st.session_state.coins)
 if st.sidebar.button("🗑️ Remove"):
     if rem_coin in st.session_state.coins: st.session_state.coins.remove(rem_coin); save_full_state(); st.rerun()
 
-# --- PRO TEST BUTTON ---
 st.sidebar.markdown("---")
 if st.sidebar.button("📡 Test Pro Chart & Signal", use_container_width=True):
     st.sidebar.info("Generating BTC Pro Chart...")
@@ -315,8 +313,7 @@ if st.sidebar.button("📡 Test Pro Chart & Signal", use_container_width=True):
         else: st.sidebar.error("Failed to generate Pro Chart")
     else: st.sidebar.error("Failed to fetch BTC")
 
-# --- MAIN ---
-st.title("👻 GHOST PROTOCOL 5.6 : PERFECT MATCH")
+st.title("👻 GHOST PROTOCOL 5.7 : CLEAN & 24/7")
 st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
 
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
@@ -356,12 +353,11 @@ def run_scan():
 
 with tab1:
     if st.session_state.bot_active:
-        if is_within_hours:
-            curr_block = current_time.hour * 4 + (current_time.minute // 15)
-            if (curr_block != st.session_state.last_scan_block_id) or st.session_state.force_scan:
-                st.session_state.last_scan_block_id = curr_block; st.session_state.force_scan = False; save_full_state(); run_scan()
-            else: st.info("⏳ AI is watching... Next scan in 15 mins."); time.sleep(10); st.rerun()
-        else: st.warning("💤 AI Sleeping..."); time.sleep(10); st.rerun()
+        # NO TIME CHECK - RUNS ALWAYS
+        curr_block = current_time.hour * 4 + (current_time.minute // 15)
+        if (curr_block != st.session_state.last_scan_block_id) or st.session_state.force_scan:
+            st.session_state.last_scan_block_id = curr_block; st.session_state.force_scan = False; save_full_state(); run_scan()
+        else: st.info("⏳ AI is watching... Next scan in 15 mins."); time.sleep(10); st.rerun()
     else: st.error("⚠️ AI STOPPED")
 
 with tab2:
