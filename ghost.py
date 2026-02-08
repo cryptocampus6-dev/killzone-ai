@@ -8,9 +8,9 @@ import os
 import json
 import yfinance as yf
 
-# --- FIX: MATPLOTLIB HEADLESS MODE (CRITICAL) ---
+# --- FIX: MATPLOTLIB HEADLESS MODE (VERY IMPORTANT) ---
 import matplotlib
-matplotlib.use('Agg') # This prevents "TclError" on servers
+matplotlib.use('Agg') # Server එකේ චාට් අඳින්න මේක අනිවාර්යයි
 import mplfinance as mpf
 import google.generativeai as genai
 from datetime import datetime
@@ -58,21 +58,9 @@ def load_data():
     return default
 
 def save_full_state():
-    # Simple save logic
     data = st.session_state.to_dict()
-    # Filter only serializable keys if needed
-    serializable_data = {
-        "bot_active": st.session_state.get("bot_active", True),
-        "daily_count": st.session_state.get("daily_count", 0),
-        "last_reset_date": st.session_state.get("last_reset_date", ""),
-        "signaled_coins": st.session_state.get("signaled_coins", []),
-        "history": st.session_state.get("history", []),
-        "last_scan_block_id": st.session_state.get("last_scan_block_id", -1),
-        "sent_morning": st.session_state.get("sent_morning", False),
-        "sent_goodbye": st.session_state.get("sent_goodbye", False),
-        "scan_log": st.session_state.get("scan_log", ""),
-        "force_scan": st.session_state.get("force_scan", False)
-    }
+    # Safe save
+    serializable_data = {k: v for k, v in data.items() if k in ["bot_active", "daily_count", "last_reset_date", "signaled_coins", "history", "last_scan_block_id", "sent_morning", "sent_goodbye", "scan_log", "force_scan"]}
     with open(DATA_FILE, "w") as f: json.dump(serializable_data, f)
 
 # --- TELEGRAM ---
@@ -91,7 +79,7 @@ def send_telegram(msg, is_sticker=False, image_path=None):
     except Exception as e:
         print(f"Telegram Error: {e}")
 
-# --- DATA FETCHING (ROBUST) ---
+# --- DATA FETCHING (ROBUST V2) ---
 def get_data(symbol):
     try:
         ticker = f"{symbol}-USD"
@@ -99,50 +87,59 @@ def get_data(symbol):
         if df.empty: return pd.DataFrame()
 
         df = df.reset_index()
-        # Handle MultiIndex columns (yfinance new version issue)
+        # Fix MultiIndex (Common yfinance issue)
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.droplevel(1)
         
-        # Rename columns standardly
+        # Standardize Columns
         cols_map = {}
         for col in df.columns:
-            if 'Datetime' in str(col) or 'Date' in str(col):
-                cols_map[col] = 'Date'
-            elif 'Open' in str(col): cols_map[col] = 'Open'
-            elif 'High' in str(col): cols_map[col] = 'High'
-            elif 'Low' in str(col): cols_map[col] = 'Low'
-            elif 'Close' in str(col): cols_map[col] = 'Close'
-            elif 'Volume' in str(col): cols_map[col] = 'Volume'
+            c = str(col).lower()
+            if 'date' in c or 'time' in c: cols_map[col] = 'Date'
+            elif 'open' in c: cols_map[col] = 'Open'
+            elif 'high' in c: cols_map[col] = 'High'
+            elif 'low' in c: cols_map[col] = 'Low'
+            elif 'close' in c: cols_map[col] = 'Close'
+            elif 'volume' in c: cols_map[col] = 'Volume'
             
         df = df.rename(columns=cols_map)
         
         if 'Date' in df.columns:
             df = df.set_index('Date')
-            return df
-        else:
-            return pd.DataFrame() 
+        
+        # Ensure numeric
+        numeric_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+        for c in numeric_cols:
+            if c in df.columns:
+                df[c] = pd.to_numeric(df[c], errors='coerce')
+                
+        return df.dropna()
             
     except Exception as e:
         print(f"Data Error: {e}")
         return pd.DataFrame()
 
-# --- CHART GENERATION (DEBUG ENABLED) ---
+# --- CHART GENERATION (DIAGNOSTIC MODE) ---
 def generate_chart_image(df, coin_name):
     filename = f"chart_{coin_name}.png"
     
-    # Verify Data
+    # Check Data
     if 'Close' not in df.columns or 'Open' not in df.columns:
-        return None, "Missing Columns: Data format error"
+        return None, f"Missing Columns. Found: {df.columns.tolist()}"
+    if len(df) < 5:
+        return None, "Not enough data points"
 
     try:
         mc = mpf.make_marketcolors(up='#00ff00', down='#ff0000', inherit=True)
         s  = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True)
         
         ema200 = df['Close'].ewm(span=200).mean()
-        # Ensure plot data length matches
         plot_df = df.tail(60)
         
-        add_plots = [mpf.make_addplot(ema200.tail(60), color='blue', width=1.5)]
+        # Safe Addplot
+        add_plots = []
+        if len(plot_df) == len(ema200.tail(60)):
+            add_plots = [mpf.make_addplot(ema200.tail(60), color='blue', width=1.5)]
 
         mpf.plot(
             plot_df,
@@ -153,11 +150,11 @@ def generate_chart_image(df, coin_name):
             title=f"{coin_name} - 15m (AI Vision)",
             savefig=filename,
             figsize=(10, 6),
-            off_image=True
+            off_image=True # Critical for server
         )
-        return filename, None # Success
+        return filename, None
     except Exception as e:
-        return None, str(e) # Return the REAL error
+        return None, str(e) # Catch the REAL error
 
 # ==============================================================================
 # 👁️ CORE: AI VISION ANALYSIS
@@ -166,24 +163,19 @@ def generate_chart_image(df, coin_name):
 def analyze_with_vision(df, coin_name):
     if df.empty or len(df) < 30: return "NEUTRAL", 0, 0, 0, 0, 0, "No Data", None
 
-    # 1. Generate Chart
     chart_path, error_msg = generate_chart_image(df, coin_name)
     
-    # --- DEBUG: Show error if failed ---
     if not chart_path: 
         return "NEUTRAL", 0, 0, 0, 0, 0, f"Chart Err: {error_msg}", None
 
-    # 2. Ask Gemini AI
     try:
         img = genai.upload_file(chart_path)
-        
         prompt = """
         You are a professional crypto day trader. Analyze this 15-minute chart image.
         Output ONLY a JSON string:
         {"signal": "LONG", "score": 90, "reason": "Reason in 10 words"}
         Possible signals: "LONG", "SHORT", "NEUTRAL". Score: 0-100.
         """
-        
         response = model.generate_content([prompt, img])
         result_text = response.text.strip().replace("```json", "").replace("```", "")
         result = json.loads(result_text)
@@ -192,14 +184,12 @@ def analyze_with_vision(df, coin_name):
         score = int(result.get("score", 0))
         reason = result.get("reason", "AI Analysis")
         
-        # Cleanup
         try: os.remove(chart_path)
         except: pass
 
     except Exception as e:
         return "NEUTRAL", 0, 0, 0, 0, 0, f"AI Err: {str(e)[:20]}", chart_path
 
-    # 3. Calculate Levels
     curr_close = df['Close'].iloc[-1]
     atr = (df['High'].iloc[-1] - df['Low'].iloc[-1])
     sl_long = curr_close - (atr * 2)
@@ -224,20 +214,28 @@ if 'coins' not in st.session_state:
 
 st.sidebar.title("🎛️ Control Panel")
 
-# --- DEBUG TEST BUTTON ---
-if st.sidebar.button("📡 Test Telegram & Chart (DEBUG)"):
-    st.sidebar.warning("Generating BTC Chart...")
+# --- 🛠️ DIAGNOSTIC TEST BUTTON ---
+if st.sidebar.button("📡 Test Telegram & Chart (Diagnose)"):
+    st.sidebar.info("1. Fetching BTC Data...")
     test_df = get_data("BTC")
+    
     if not test_df.empty:
+        st.sidebar.write(f"✅ Data Found: {test_df.shape}")
+        st.sidebar.info("2. Generating Chart...")
+        
         c_path, c_err = generate_chart_image(test_df, "BTC")
+        
         if c_path:
-            st.sidebar.success("Chart Generated! Sending...")
-            send_telegram("💎<b>TEST</b>: Chart Generation Success!", image_path=c_path)
-            st.image(c_path, caption="Generated Chart Preview") # Show in UI to verify
+            st.sidebar.success("✅ Chart Generated!")
+            st.sidebar.info("3. Sending to Telegram...")
+            send_telegram("💎<b>GHOST DIAGNOSTIC TEST</b>💎\n\n✅ Chart Generation: SUCCESS\n🚀 System is Ready", image_path=c_path)
+            st.sidebar.success("Sent! Check Telegram.")
+            st.image(c_path, caption="Preview", use_column_width=True)
         else:
-            st.sidebar.error(f"Failed: {c_err}") # Show exact error
+            st.sidebar.error("❌ CHART FAILED!")
+            st.sidebar.error(f"Error Details: {c_err}") # <-- මෙන්න මේකයි අපිට ඕන
     else:
-        st.sidebar.error("Failed to fetch BTC data")
+        st.sidebar.error("❌ Failed to fetch BTC data (Empty DataFrame)")
 
 st.sidebar.markdown("---")
 coins_list = st.session_state.coins
@@ -263,8 +261,8 @@ if col2.button("⏹️ STOP"): st.session_state.bot_active = False; save_full_st
 if st.sidebar.button("⚡ FORCE SCAN NOW"): st.session_state.force_scan = True; st.rerun()
 if st.sidebar.button("🔄 RESET LIMIT"): st.session_state.daily_count = 0; st.session_state.signaled_coins = []; save_full_state(); st.rerun()
 
-st.title("👻 GHOST PROTOCOL 3.3 : VISION DEBUGGER")
-st.write("Engine: **Google Gemini 1.5 Pro** | Status: **Debugging Mode**")
+st.title("👻 GHOST PROTOCOL 4.0 : DIAGNOSTICS")
+st.write("Engine: **Google Gemini 1.5 Pro** | Status: **System Check Mode**")
 
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
 
@@ -273,7 +271,6 @@ def run_scan():
 
     st.markdown(f"### 👁️ AI Scanning {len(coins_list)} Coins...")
     progress_bar = st.progress(0); status_area = st.empty()
-    
     if 'scan_log' not in st.session_state: st.session_state.scan_log = ""
 
     for i, coin in enumerate(coins_list):
@@ -282,7 +279,6 @@ def run_scan():
 
         try:
             status_area.markdown(f"📸 **Capturing Chart:** `{coin}` ...")
-            
             df = get_data(coin)
             if df.empty: continue 
 
@@ -294,7 +290,6 @@ def run_scan():
             
             status_area.markdown(f"🤖 **AI Analyzing:** `{coin}` | 🧠 **Verdict:** :{score_color}[{sig} ({score}%)]")
             
-            # Log the specific reason or error
             log_entry = f"`{coin}`: {sig} ({score}%) - {reason} | "
             st.session_state.scan_log = log_entry + st.session_state.scan_log
             if len(st.session_state.scan_log) > 1000: st.session_state.scan_log = st.session_state.scan_log[:1000]
@@ -329,18 +324,14 @@ def run_scan():
                         f"⭕ <b>Stop Loss {sl:{p_fmt}}</b>\n\n"
                         f"⚠️ <b>Risk: 1-2% Only</b>"
                     )
-                    
                     send_telegram(msg, image_path=chart_path)
-                    
                     st.session_state.history.insert(0, {"Time": current_time.strftime("%H:%M"), "Coin": coin, "Signal": sig, "Reason": reason})
                     st.session_state.daily_count += 1
                     st.session_state.signaled_coins.append(coin)
                     save_full_state()
-                    
                     if st.session_state.daily_count >= MAX_DAILY_SIGNALS: break
             
-            if chart_path and os.path.exists(chart_path):
-                os.remove(chart_path)
+            if chart_path and os.path.exists(chart_path): os.remove(chart_path)
 
         except Exception as e:
             print(f"Error {coin}: {e}")
@@ -353,7 +344,6 @@ def run_scan():
 
 with tab1:
     if st.session_state.scan_log: st.markdown(f"#### 📝 AI Thoughts:\n{st.session_state.scan_log}")
-
     if st.session_state.bot_active:
         if is_within_hours:
             current_block_id = current_time.hour * 4 + (current_time.minute // 15)
@@ -366,8 +356,7 @@ with tab1:
             else:
                 st.info("⏳ AI is watching the markets... (Next scan in 15 mins)")
                 time.sleep(10); st.rerun()
-        else:
-            st.warning("💤 AI Sleeping..."); time.sleep(10); st.rerun()
+        else: st.warning("💤 AI Sleeping..."); time.sleep(10); st.rerun()
     else: st.error("⚠️ AI STOPPED"); time.sleep(2)
 
 with tab2:
