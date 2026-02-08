@@ -109,7 +109,7 @@ def get_data(symbol):
         return pd.DataFrame()
 
 # ==============================================================================
-# 🎨 CUSTOM CHART DRAWING (THE ARCHITECT)
+# 🎨 REAL TRADINGVIEW STYLE CHART (DARK MODE + POSITION TOOL)
 # ==============================================================================
 
 # 1. Simple Chart for AI Analysis
@@ -123,78 +123,82 @@ def generate_ai_chart(df, coin_name):
         return filename
     except: return None
 
-# 2. PRO CHART GENERATION (MANUAL DRAWING TO FIX KEYERROR)
+# 2. PRO CHART GENERATION (The exact Photo 2 look)
 def generate_telegram_chart(df, coin_name, signal_type, entry, sl, tps):
     filename = f"tg_chart_{coin_name}_{int(time.time())}.png"
-    plot_df = df.tail(60)
+    plot_df = df.tail(50) # Show last 50 candles
     if len(plot_df) < 20: return None
 
-    # Custom Style: Light/Grey Theme (as per request)
-    mc = mpf.make_marketcolors(up='#089981', down='#F23645', edge='inherit', wick='inherit', volume='in', inherit=True)
-    # Using a style that resembles the grey background reference
-    s = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True, facecolor='#E1E1E1', figcolor='#E1E1E1')
+    # --- DARK THEME STYLE ---
+    # TradingView colors: up=tealish green, down=red
+    mc = mpf.make_marketcolors(up='#26a69a', down='#ef5350', edge='inherit', wick='inherit', volume='in', inherit=True)
+    # Dark background, white text
+    s = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True, 
+                           facecolor='#131722', figcolor='#131722', 
+                           rc={'axes.labelcolor': 'white', 'xtick.color': 'white', 'ytick.color': 'white', 'text.color': 'white', 'axes.grid.axis': 'y'})
 
-    # Create Figure and Axes MANUALLY
+    # Create Figure
     fig, axes = mpf.plot(plot_df, type='candle', style=s, volume=False, figsize=(12, 7), returnfig=True, tight_layout=True)
     ax = axes[0]
 
-    # --- 1. DRAW POSITION TOOL (BOXES) ---
-    x_start = 0
-    x_end = len(plot_df) # Span full width
-    width = x_end - x_start
+    # --- 1. DRAW REALISTIC POSITION TOOL ---
+    # Start tool from the *last* candle index
+    x_start = len(plot_df) - 1
+    # Extend it 8 units to the right (not full width)
+    width = 8 
     
     tp_max = tps[-1]
     
-    # Colors matching the image (Greyish Profit, Reddish Loss)
-    color_profit = '#9598a1' # The grey profit box
-    color_loss = '#FFB3BA'   # The pink/red loss box
+    # TradingView Tool Colors (Teal profit, Red loss) with transparency
+    color_profit = '#00897Baa' 
+    color_loss = '#FF5252aa'   
     
     if signal_type == "LONG":
-        # Profit Box (Entry to TP Max)
-        rect_profit = patches.Rectangle((x_start, entry), width, tp_max - entry, linewidth=0, edgecolor='none', facecolor=color_profit, alpha=0.3)
-        # Loss Box (SL to Entry)
-        rect_loss = patches.Rectangle((x_start, sl), width, entry - sl, linewidth=0, edgecolor='none', facecolor=color_loss, alpha=0.3)
+        # Profit Box starts at Entry, goes up
+        rect_profit = patches.Rectangle((x_start, entry), width, tp_max - entry, linewidth=0, edgecolor='none', facecolor=color_profit)
+        # Loss Box starts at SL, goes up to Entry
+        rect_loss = patches.Rectangle((x_start, sl), width, entry - sl, linewidth=0, edgecolor='none', facecolor=color_loss)
     else: # SHORT
-        # Profit Box (TP Max to Entry)
-        rect_profit = patches.Rectangle((x_start, tp_max), width, entry - tp_max, linewidth=0, edgecolor='none', facecolor=color_profit, alpha=0.3)
-        # Loss Box (Entry to SL)
-        rect_loss = patches.Rectangle((x_start, entry), width, sl - entry, linewidth=0, edgecolor='none', facecolor=color_loss, alpha=0.3)
+        # Profit Box starts at TP Max, goes up to Entry
+        rect_profit = patches.Rectangle((x_start, tp_max), width, entry - tp_max, linewidth=0, edgecolor='none', facecolor=color_profit)
+        # Loss Box starts at Entry, goes up to SL
+        rect_loss = patches.Rectangle((x_start, entry), width, sl - entry, linewidth=0, edgecolor='none', facecolor=color_loss)
 
     ax.add_patch(rect_profit)
     ax.add_patch(rect_loss)
 
-    # --- 2. DRAW PRICE LABELS (TAGS) ---
+    # --- 2. DRAW COLORED PRICE TAGS ---
     p_fmt = ".2f" if entry > 10 else ".4f"
     
-    def add_price_tag(price, color, text):
-        # Draw Line
-        ax.axhline(price, color=color, linestyle='--', linewidth=1, alpha=0.8)
-        # Draw Tag (Text with Box) on the right Y-axis
-        ax.text(len(plot_df) + 0.2, price, f" {text} {price:{p_fmt}} ", 
-                color='white', fontsize=10, fontweight='bold', va='center',
-                bbox=dict(facecolor=color, edgecolor=color, boxstyle='square,pad=0.3'))
+    def add_price_tag(price, color, text, text_color='white'):
+        # Draw faint line
+        ax.axhline(price, color=color, linestyle='--', linewidth=0.8, alpha=0.6)
+        # Draw Tag box on the right axis
+        ax.text(len(plot_df) + width + 0.2, price, f" {text} {price:{p_fmt}} ", 
+                color=text_color, fontsize=9, fontweight='bold', va='center', ha='left',
+                bbox=dict(facecolor=color, edgecolor=color, boxstyle='square,pad=0.2'))
 
-    # Entry Tag (Grey/Black)
-    add_price_tag(entry, '#555555', 'ENTRY')
+    # Entry Tag (Blue/Grey)
+    add_price_tag(entry, '#2962FF', 'ENTRY')
     
-    # SL Tag (Red)
-    add_price_tag(sl, '#F23645', 'SL')
+    # SL Tag (Matching Loss Box Red)
+    add_price_tag(sl, '#FF5252', 'SL')
     
-    # TP Tags (Green/Greyish)
-    for i, tp in enumerate(tps):
-        # Only show TP1 and TP4 to avoid clutter, or all if needed
-        add_price_tag(tp, '#089981', f'TP{i+1}')
+    # TP Tags (Matching Profit Box Teal)
+    # Only showing TP1 and TP4 for cleanliness, like real TV tools often do
+    add_price_tag(tps[0], '#00897B', 'TP1')
+    add_price_tag(tps[-1], '#00897B', 'TP4')
 
     # --- 3. WATERMARK ---
     mid_x = len(plot_df) / 2
     mid_y = (plot_df['High'].max() + plot_df['Low'].min()) / 2
-    ax.text(mid_x, mid_y, "CRYPTO CAMPUS VIP", fontsize=40, color='black', alpha=0.1, ha='center', va='center', fontweight='bold', zorder=0)
+    ax.text(mid_x, mid_y, "CRYPTO CAMPUS VIP", fontsize=35, color='white', alpha=0.08, ha='center', va='center', fontweight='bold', zorder=0)
 
-    # Title
-    ax.set_title(f"{coin_name} - {signal_type} SETUP", color='black', fontsize=16, fontweight='bold', pad=15)
+    # Title styling
+    ax.set_title(f"{coin_name} 15m · {signal_type} SETUP", color='white', fontsize=12, loc='left', pad=10)
     
     # Save
-    fig.savefig(filename, facecolor=fig.get_facecolor(), bbox_inches='tight')
+    fig.savefig(filename, facecolor=fig.get_facecolor(), bbox_inches='tight', pad_inches=0.1)
     plt.close(fig)
     return filename
 
@@ -226,7 +230,9 @@ def analyze_with_vision(df, coin_name):
     # Data for Signal
     curr_close = df['Close'].iloc[-1]
     atr = (df['High'].iloc[-1] - df['Low'].iloc[-1])
+    # Logical SL placement
     sl = curr_close - (atr * 2.5) if sig == "LONG" else curr_close + (atr * 2.5)
+    
     sl_dist = abs(curr_close - sl) / curr_close * 100
     leverage = int(max(5, min(RISK_PER_TRADE_ROI / sl_dist, 75))) if sl_dist > 0 else 20
 
@@ -312,7 +318,7 @@ if st.sidebar.button("📡 Test Pro Chart & Signal", use_container_width=True):
     else: st.sidebar.error("Failed to fetch BTC")
 
 # --- MAIN ---
-st.title("👻 GHOST PROTOCOL 5.4 : THE ARCHITECT")
+st.title("👻 GHOST PROTOCOL 5.5 : TRADINGVIEW EDITION")
 st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
 
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
