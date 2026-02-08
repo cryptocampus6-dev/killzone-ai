@@ -75,7 +75,7 @@ def get_data(symbol, limit=200):
     return pd.DataFrame()
 
 # ==============================================================================
-# 🧠 NEW STRATEGY: HEIKIN-ASHI + SUPERTREND + ADX
+# 🧠 STRATEGY: HEIKIN-ASHI + SUPERTREND + ADX
 # ==============================================================================
 
 def analyze_ultimate(df, coin_name):
@@ -212,7 +212,6 @@ if st.sidebar.button("📡 Test Telegram"):
     send_telegram(test_msg); st.sidebar.success("Test Sent!")
 
 st.title("👻 GHOST PROTOCOL 2.0 : ELITE TRADER")
-# --- මෙන්න මේ පේළිය මම අලුත් කළා Strategy එකට ගැලපෙන්න ---
 st.write("Methods Active: **Heikin-Ashi Smoothed, SuperTrend (Trend), ADX (>25 Strength), Volume Flow, ATR Dynamic Stop, Trend Following System**")
 st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
 
@@ -294,7 +293,12 @@ def run_scan():
                     roi_3 = round(abs(tps[2]-price)/price*100*dynamic_leverage, 1)
                     roi_4 = round(abs(tps[3]-price)/price*100*dynamic_leverage, 1)
                     sl_roi = round(abs(price-sl)/price*100*dynamic_leverage, 1)
-                    p_fmt = ".8f" if price < 1 else ".2f"
+                    
+                    # --- Formatting Logic Updated Here ---
+                    if price < 1: p_fmt = ".8f"
+                    elif price < 20: p_fmt = ".4f" # For DOT, XRP, etc.
+                    else: p_fmt = ".2f"
+                    # -------------------------------------
 
                     msg = (
                         f"💎<b>CRYPTO CAMPUS VIP</b>💎\n\n"
