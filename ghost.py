@@ -109,7 +109,7 @@ def get_data(symbol):
         return pd.DataFrame()
 
 # ==============================================================================
-# 🎨 ULTRA PRO CHART (POSITION TOOL STYLE)
+# 🎨 CUSTOM CHART DRAWING (THE ARCHITECT)
 # ==============================================================================
 
 # 1. Simple Chart for AI Analysis
@@ -123,63 +123,75 @@ def generate_ai_chart(df, coin_name):
         return filename
     except: return None
 
-# 2. Telegram Chart with POSITION TOOL (Boxes)
+# 2. PRO CHART GENERATION (MANUAL DRAWING TO FIX KEYERROR)
 def generate_telegram_chart(df, coin_name, signal_type, entry, sl, tps):
     filename = f"tg_chart_{coin_name}_{int(time.time())}.png"
     plot_df = df.tail(60)
     if len(plot_df) < 20: return None
 
-    # Style
+    # Custom Style: Light/Grey Theme (as per request)
     mc = mpf.make_marketcolors(up='#089981', down='#F23645', edge='inherit', wick='inherit', volume='in', inherit=True)
-    s = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True, facecolor='#131722', figcolor='#131722', 
-                           rc={'axes.labelcolor': 'white', 'xtick.color': 'white', 'ytick.color': 'white', 'text.color': 'white'})
+    # Using a style that resembles the grey background reference
+    s = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True, facecolor='#E1E1E1', figcolor='#E1E1E1')
 
-    # Create Plot
+    # Create Figure and Axes MANUALLY
     fig, axes = mpf.plot(plot_df, type='candle', style=s, volume=False, figsize=(12, 7), returnfig=True, tight_layout=True)
     ax = axes[0]
 
-    # --- DRAW POSITION TOOL (BOXES) ---
+    # --- 1. DRAW POSITION TOOL (BOXES) ---
     x_start = 0
-    x_end = len(plot_df) + 8 # Extend to right for labels
+    x_end = len(plot_df) # Span full width
     width = x_end - x_start
     
-    # 🟢 Profit Box (Green) - From Entry to Highest TP
     tp_max = tps[-1]
+    
+    # Colors matching the image (Greyish Profit, Reddish Loss)
+    color_profit = '#9598a1' # The grey profit box
+    color_loss = '#FFB3BA'   # The pink/red loss box
+    
     if signal_type == "LONG":
-        rect_profit = patches.Rectangle((x_start, entry), width, tp_max - entry, linewidth=0, edgecolor='none', facecolor='#089981', alpha=0.15)
-        rect_loss = patches.Rectangle((x_start, sl), width, entry - sl, linewidth=0, edgecolor='none', facecolor='#F23645', alpha=0.15)
+        # Profit Box (Entry to TP Max)
+        rect_profit = patches.Rectangle((x_start, entry), width, tp_max - entry, linewidth=0, edgecolor='none', facecolor=color_profit, alpha=0.3)
+        # Loss Box (SL to Entry)
+        rect_loss = patches.Rectangle((x_start, sl), width, entry - sl, linewidth=0, edgecolor='none', facecolor=color_loss, alpha=0.3)
     else: # SHORT
-        rect_profit = patches.Rectangle((x_start, tp_max), width, entry - tp_max, linewidth=0, edgecolor='none', facecolor='#089981', alpha=0.15)
-        rect_loss = patches.Rectangle((x_start, entry), width, sl - entry, linewidth=0, edgecolor='none', facecolor='#F23645', alpha=0.15)
+        # Profit Box (TP Max to Entry)
+        rect_profit = patches.Rectangle((x_start, tp_max), width, entry - tp_max, linewidth=0, edgecolor='none', facecolor=color_profit, alpha=0.3)
+        # Loss Box (Entry to SL)
+        rect_loss = patches.Rectangle((x_start, entry), width, sl - entry, linewidth=0, edgecolor='none', facecolor=color_loss, alpha=0.3)
 
     ax.add_patch(rect_profit)
     ax.add_patch(rect_loss)
 
-    # --- DRAW LINES & LABELS ---
+    # --- 2. DRAW PRICE LABELS (TAGS) ---
     p_fmt = ".2f" if entry > 10 else ".4f"
     
-    # Helper to add line and label
-    def add_level(price, color, label, style='--'):
-        ax.axhline(price, color=color, linestyle=style, linewidth=1, alpha=0.7)
-        ax.text(len(plot_df) + 0.5, price, f"{label} {price:{p_fmt}}", color='black', fontsize=9, fontweight='bold', 
-                va='center', bbox=dict(facecolor=color, edgecolor='none', alpha=0.8, boxstyle='round,pad=0.2'))
+    def add_price_tag(price, color, text):
+        # Draw Line
+        ax.axhline(price, color=color, linestyle='--', linewidth=1, alpha=0.8)
+        # Draw Tag (Text with Box) on the right Y-axis
+        ax.text(len(plot_df) + 0.2, price, f" {text} {price:{p_fmt}} ", 
+                color='white', fontsize=10, fontweight='bold', va='center',
+                bbox=dict(facecolor=color, edgecolor=color, boxstyle='square,pad=0.3'))
 
-    # Entry
-    add_level(entry, '#787B86', 'ENTRY', '-')
+    # Entry Tag (Grey/Black)
+    add_price_tag(entry, '#555555', 'ENTRY')
     
-    # Stop Loss
-    add_level(sl, '#F23645', 'SL')
+    # SL Tag (Red)
+    add_price_tag(sl, '#F23645', 'SL')
     
-    # Take Profits
+    # TP Tags (Green/Greyish)
     for i, tp in enumerate(tps):
-        add_level(tp, '#089981', f'TP{i+1}')
+        # Only show TP1 and TP4 to avoid clutter, or all if needed
+        add_price_tag(tp, '#089981', f'TP{i+1}')
 
-    # --- WATERMARK ---
+    # --- 3. WATERMARK ---
     mid_x = len(plot_df) / 2
     mid_y = (plot_df['High'].max() + plot_df['Low'].min()) / 2
-    ax.text(mid_x, mid_y, "CRYPTO CAMPUS VIP", fontsize=35, color='white', alpha=0.1, ha='center', va='center', rotation=0, fontweight='bold')
+    ax.text(mid_x, mid_y, "CRYPTO CAMPUS VIP", fontsize=40, color='black', alpha=0.1, ha='center', va='center', fontweight='bold', zorder=0)
 
-    ax.set_title(f"{coin_name} - {signal_type} SETUP", color='white', fontsize=14, fontweight='bold', pad=20)
+    # Title
+    ax.set_title(f"{coin_name} - {signal_type} SETUP", color='black', fontsize=16, fontweight='bold', pad=15)
     
     # Save
     fig.savefig(filename, facecolor=fig.get_facecolor(), bbox_inches='tight')
@@ -206,7 +218,7 @@ def analyze_with_vision(df, coin_name):
         sig = result.get("signal", "NEUTRAL")
         score = int(result.get("score", 0))
         reason = result.get("reason", "AI Analysis")
-        os.remove(ai_chart_path) # Clean AI chart
+        os.remove(ai_chart_path)
     except Exception as e:
         if os.path.exists(ai_chart_path): os.remove(ai_chart_path)
         return "NEUTRAL", 0, 0, 0, 0, 0, f"AI Err: {str(e)[:20]}", None
@@ -214,9 +226,7 @@ def analyze_with_vision(df, coin_name):
     # Data for Signal
     curr_close = df['Close'].iloc[-1]
     atr = (df['High'].iloc[-1] - df['Low'].iloc[-1])
-    # Logical SL placement
     sl = curr_close - (atr * 2.5) if sig == "LONG" else curr_close + (atr * 2.5)
-    
     sl_dist = abs(curr_close - sl) / curr_close * 100
     leverage = int(max(5, min(RISK_PER_TRADE_ROI / sl_dist, 75))) if sl_dist > 0 else 20
 
@@ -232,27 +242,10 @@ def format_vip_message(coin, sig, price, sl, tps, leverage):
     sl_roi = round(abs(price-sl)/price*100*leverage, 1)
     risk = abs(price - sl); reward = abs(tps[3] - price)
     rr = round(reward / risk, 1) if risk > 0 else 0
-    
-    if sig == "LONG":
-        direction_text = "🟢Long"
-    else:
-        direction_text = "🔴Short"
+    direction_text = "🟢Long" if sig == "LONG" else "🔴Short"
 
     msg = (
-        f"💎<b>CRYPTO CAMPUS VIP</b>💎\n\n"
-        f"🌟 <b>{coin} USDT</b>\n\n"
-        f"{direction_text}\n\n"
-        f"🚀<b>Isolated</b>\n"
-        f"📈<b>Leverage {leverage}X</b>\n\n"
-        f"💥<b>Entry {price:{p_fmt}}</b>\n\n"
-        f"✅<b>Take Profit</b>\n\n"
-        f"1️⃣ {tps[0]:{p_fmt}} ({roi_1}%)\n"
-        f"2️⃣ {tps[1]:{p_fmt}} ({roi_2}%)\n"
-        f"3️⃣ {tps[2]:{p_fmt}} ({roi_3}%)\n"
-        f"4️⃣ {tps[3]:{p_fmt}} ({roi_4}%)\n\n"
-        f"⭕ <b>Stop Loss {sl:{p_fmt}} ({sl_roi}%)</b>\n\n"
-        f"📝 <b>RR 1:{rr}</b>\n\n"
-        f"⚠️ <b>Margin Use 1%-5%(Trading Plan Use)</b>"
+        f"💎<b>CRYPTO CAMPUS VIP</b>💎\n\n🌟 <b>{coin} USDT</b>\n\n{direction_text}\n\n🚀<b>Isolated</b>\n📈<b>Leverage {leverage}X</b>\n\n💥<b>Entry {price:{p_fmt}}</b>\n\n✅<b>Take Profit</b>\n\n1️⃣ {tps[0]:{p_fmt}} ({roi_1}%)\n2️⃣ {tps[1]:{p_fmt}} ({roi_2}%)\n3️⃣ {tps[2]:{p_fmt}} ({roi_3}%)\n4️⃣ {tps[3]:{p_fmt}} ({roi_4}%)\n\n⭕ <b>Stop Loss {sl:{p_fmt}} ({sl_roi}%)</b>\n\n📝 <b>RR 1:{rr}</b>\n\n⚠️ <b>Margin Use 1%-5%(Trading Plan Use)</b>"
     )
     return msg
 
@@ -263,7 +256,6 @@ saved_data = load_data()
 for k, v in saved_data.items():
     if k not in st.session_state: st.session_state[k] = v
 
-# --- SIDEBAR ---
 st.sidebar.title("🎛️ Control Panel")
 current_time = datetime.now(lz)
 is_within_hours = START_HOUR <= current_time.hour < END_HOUR
@@ -301,15 +293,13 @@ if st.sidebar.button("📡 Test Pro Chart & Signal", use_container_width=True):
     st.sidebar.info("Generating BTC Pro Chart...")
     test_df = get_data("BTC")
     if not test_df.empty:
-        # Generate Test Signal Data
         price = test_df['Close'].iloc[-1]
-        sl = price * 0.99 # 1% SL
+        sl = price * 0.99 
         risk = abs(price - sl)
         tps = [price + risk*1, price + risk*2, price + risk*3, price + risk*4]
         lev = 50
         sig_type = "LONG"
 
-        # GENERATE THE PRO CHART
         tg_chart_path = generate_telegram_chart(test_df, "BTC", sig_type, price, sl, tps)
         
         if tg_chart_path:
@@ -317,12 +307,12 @@ if st.sidebar.button("📡 Test Pro Chart & Signal", use_container_width=True):
             msg = format_vip_message("BTC", sig_type, price, sl, tps, leverage=lev)
             send_telegram(msg, image_path=tg_chart_path)
             st.sidebar.success("Pro Signal Sent!")
-            os.remove(tg_chart_path) # Clean up
+            os.remove(tg_chart_path)
         else: st.sidebar.error("Failed to generate Pro Chart")
     else: st.sidebar.error("Failed to fetch BTC")
 
 # --- MAIN ---
-st.title("👻 GHOST PROTOCOL 5.3 : ULTRA PRO")
+st.title("👻 GHOST PROTOCOL 5.4 : THE ARCHITECT")
 st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
 
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
@@ -338,17 +328,13 @@ def run_scan():
         df = get_data(coin)
         if df.empty: continue 
 
-        # 1. AI Analysis
         sig, score, price, leverage, sl, _, reason, _ = analyze_with_vision(df, coin)
         
         if sig != "NEUTRAL":
             status_area.markdown(f"🎯 **Signal Found!** Generating Pro Chart for {coin}...")
-            # TP calc
             risk = abs(price - sl)
-            if sig == "LONG": tps = [price+risk, price+2*risk, price+3*risk, price+4*risk]
-            else: tps = [price-risk, price-2*risk, price-3*risk, price-4*risk]
+            tps = [price+risk, price+2*risk, price+3*risk, price+4*risk] if sig == "LONG" else [price-risk, price-2*risk, price-3*risk, price-4*risk]
             
-            # 2. Generate PRO Chart for Telegram
             tg_chart_path = generate_telegram_chart(df, coin, sig, price, sl, tps)
 
             if tg_chart_path:
