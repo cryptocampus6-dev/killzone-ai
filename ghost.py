@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import pandas_ta as ta
@@ -12,7 +13,6 @@ import yfinance as yf
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 import mplfinance as mpf
 import google.generativeai as genai
 from datetime import datetime
@@ -25,8 +25,7 @@ TELEGRAM_BOT_TOKEN = "8524773131:AAG7YAYrzt9HYu34UhUJ0af_TDamhyndBas"
 CHANNEL_ID = "-1003534299054"
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWlMq--iOTVBE4BA"
 
-# --- CONFIGURATION (NO SLEEP MODE) ---
-# START_HOUR සහ END_HOUR අයින් කළා. දැන් 24/7 වැඩ.
+# --- CONFIGURATION ---
 MAX_DAILY_SIGNALS = 8
 DATA_FILE = "bot_data.json"
 RISK_PER_TRADE_ROI = 60 
@@ -65,17 +64,13 @@ def save_full_state():
     with open(DATA_FILE, "w") as f: json.dump(serializable_data, f)
 
 # --- TELEGRAM ---
-def send_telegram(msg, is_sticker=False, image_path=None):
+def send_telegram(msg, is_sticker=False):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/"
     try:
         if is_sticker:
             requests.post(url + "sendSticker", data={"chat_id": CHANNEL_ID, "sticker": STICKER_ID})
-        elif image_path and os.path.exists(image_path):
-            with open(image_path, 'rb') as img_file:
-                files = {'photo': img_file}
-                data = {'chat_id': CHANNEL_ID, 'caption': msg, 'parse_mode': 'HTML'}
-                requests.post(url + "sendPhoto", files=files, data=data)
         else:
+            # Send TEXT ONLY
             requests.post(url + "sendMessage", data={"chat_id": CHANNEL_ID, "text": msg, "parse_mode": "HTML"})
     except Exception as e:
         print(f"Telegram Error: {e}")
@@ -108,102 +103,23 @@ def get_data(symbol):
         return pd.DataFrame()
 
 # ==============================================================================
-# 🎨 CUSTOM CHART DRAWING (CLEAN SILVER THEME)
+# 🧠 AI CHART (INTERNAL ONLY - NOT SENT)
 # ==============================================================================
 
 def generate_ai_chart(df, coin_name):
     filename = f"ai_chart_{coin_name}.png"
     if len(df) < 30: return None
     try:
-        # AI sees simple black/white/red pattern
-        mc = mpf.make_marketcolors(up='#000000', down='#D73A3A', edge='inherit', wick='inherit', volume='in', inherit=True)
+        # Simple chart for AI to analyze
+        mc = mpf.make_marketcolors(up='#00FF00', down='#FF0000', inherit=True)
         s = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True)
         mpf.plot(df.tail(60), type='candle', style=s, volume=False, savefig=filename, figsize=(8, 5))
         return filename
     except: return None
 
-def generate_telegram_chart(df, coin_name, signal_type, entry, sl, tps):
-    filename = f"tg_chart_{coin_name}_{int(time.time())}.png"
-    plot_df = df.tail(50) 
-    if len(plot_df) < 20: return None
-
-    # --- THEME COLORS ---
-    bg_color = '#E6E6E6'       # Light Gray Background
-    text_color = '#000000'     # Black Text
-    candle_up = '#000000'      # Black Up Candle
-    candle_down = '#D73A3A'    # Red Down Candle
-    candle_border = '#000000'  # Black Border
-    
-    # Tool Colors
-    profit_color = '#9E9E9E'   # Medium Gray
-    loss_color = '#EFA9A9'     # Light Red/Pink
-
-    # 1. Setup Style
-    mc = mpf.make_marketcolors(up=candle_up, down=candle_down, edge=candle_border, wick=candle_border, volume='in')
-    s = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True, 
-                           facecolor=bg_color, figcolor=bg_color, 
-                           rc={'axes.labelcolor': text_color, 'xtick.color': text_color, 
-                               'ytick.color': text_color, 'text.color': text_color, 
-                               'axes.grid.axis': 'y', 'grid.color': '#B0B0B0'})
-
-    # 2. Create Plot
-    fig, axes = mpf.plot(plot_df, type='candle', style=s, volume=False, figsize=(12, 7), returnfig=True, tight_layout=True)
-    ax = axes[0]
-
-    # --- 3. DRAW POSITION TOOL (BOXES) ---
-    x_start = len(plot_df) - 1
-    width = 8 
-    tp_max = tps[-1]
-    
-    if signal_type == "LONG":
-        # Profit Box (Grey)
-        rect_profit = patches.Rectangle((x_start, entry), width, tp_max - entry, linewidth=0, edgecolor='none', facecolor=profit_color, alpha=0.5)
-        # Loss Box (Pink)
-        rect_loss = patches.Rectangle((x_start, sl), width, entry - sl, linewidth=0, edgecolor='none', facecolor=loss_color, alpha=0.5)
-    else: # SHORT
-        # Profit Box (Grey)
-        rect_profit = patches.Rectangle((x_start, tp_max), width, entry - tp_max, linewidth=0, edgecolor='none', facecolor=profit_color, alpha=0.5)
-        # Loss Box (Pink)
-        rect_loss = patches.Rectangle((x_start, entry), width, sl - entry, linewidth=0, edgecolor='none', facecolor=loss_color, alpha=0.5)
-
-    ax.add_patch(rect_profit)
-    ax.add_patch(rect_loss)
-
-    # --- 4. DRAW BLACK PRICE TAGS ---
-    p_fmt = ".2f" if entry > 10 else ".4f"
-    
-    def add_price_tag(price, bg_col, label_text):
-        # Draw Black Line
-        ax.axhline(price, color='#000000', linestyle='--', linewidth=0.8, alpha=0.8)
-        # Draw Tag
-        ax.text(len(plot_df) + width + 0.2, price, f" {label_text} {price:{p_fmt}} ", 
-                color='#000000', fontsize=9, fontweight='bold', va='center', ha='left',
-                bbox=dict(facecolor=bg_col, edgecolor='#000000', boxstyle='square,pad=0.2', alpha=0.8))
-
-    # Entry Tag
-    add_price_tag(entry, '#FFFFFF', 'ENTRY') # White bg for entry tag clarity
-    
-    # SL Tag (Matches Loss Box)
-    add_price_tag(sl, loss_color, 'SL')
-    
-    # TP Tags (Matches Profit Box)
-    add_price_tag(tps[0], profit_color, 'TP1')
-    add_price_tag(tps[-1], profit_color, 'TP4')
-
-    # --- 5. WATERMARK (BLACK) ---
-    mid_x = len(plot_df) / 2
-    mid_y = (plot_df['High'].max() + plot_df['Low'].min()) / 2
-    ax.text(mid_x, mid_y, "CRYPTO CAMPUS VIP", fontsize=35, color='#000000', alpha=0.08, ha='center', va='center', fontweight='bold', zorder=0)
-
-    # Title styling (Black)
-    ax.set_title(f"{coin_name} 15m · {signal_type} SETUP", color='#000000', fontsize=12, loc='left', pad=10)
-    
-    fig.savefig(filename, facecolor=fig.get_facecolor(), bbox_inches='tight', pad_inches=0.1)
-    plt.close(fig)
-    return filename
-
 # --- AI ANALYSIS ---
 def analyze_with_vision(df, coin_name):
+    # We still generate the chart for AI, but we won't send it to Telegram
     ai_chart_path = generate_ai_chart(df, coin_name)
     if not ai_chart_path: return "NEUTRAL", 0, 0, 0, 0, 0, "Chart Error", None
 
@@ -221,13 +137,17 @@ def analyze_with_vision(df, coin_name):
         sig = result.get("signal", "NEUTRAL")
         score = int(result.get("score", 0))
         reason = result.get("reason", "AI Analysis")
+        
+        # Cleanup AI chart immediately
         os.remove(ai_chart_path)
+        
     except Exception as e:
         if os.path.exists(ai_chart_path): os.remove(ai_chart_path)
         return "NEUTRAL", 0, 0, 0, 0, 0, f"AI Err: {str(e)[:20]}", None
 
     curr_close = df['Close'].iloc[-1]
     atr = (df['High'].iloc[-1] - df['Low'].iloc[-1])
+    # Logical SL placement
     sl = curr_close - (atr * 2.5) if sig == "LONG" else curr_close + (atr * 2.5)
     sl_dist = abs(curr_close - sl) / curr_close * 100
     leverage = int(max(5, min(RISK_PER_TRADE_ROI / sl_dist, 75))) if sl_dist > 0 else 20
@@ -260,7 +180,6 @@ for k, v in saved_data.items():
 
 st.sidebar.title("🎛️ Control Panel")
 current_time = datetime.now(lz)
-# REMOVED START_HOUR CHECK - 24/7 ACTIVE
 
 status_color = "red"; status_text = "STOPPED 🔴"
 if st.session_state.bot_active:
@@ -290,9 +209,10 @@ rem_coin = st.sidebar.selectbox("Remove Coin", st.session_state.coins)
 if st.sidebar.button("🗑️ Remove"):
     if rem_coin in st.session_state.coins: st.session_state.coins.remove(rem_coin); save_full_state(); st.rerun()
 
+# --- TEXT ONLY TEST BUTTON ---
 st.sidebar.markdown("---")
-if st.sidebar.button("📡 Test Pro Chart & Signal", use_container_width=True):
-    st.sidebar.info("Generating BTC Pro Chart...")
+if st.sidebar.button("📡 Test Signal (Text Only)", use_container_width=True):
+    st.sidebar.info("Fetching BTC Data...")
     test_df = get_data("BTC")
     if not test_df.empty:
         price = test_df['Close'].iloc[-1]
@@ -302,18 +222,13 @@ if st.sidebar.button("📡 Test Pro Chart & Signal", use_container_width=True):
         lev = 50
         sig_type = "LONG"
 
-        tg_chart_path = generate_telegram_chart(test_df, "BTC", sig_type, price, sl, tps)
-        
-        if tg_chart_path:
-            send_telegram("", is_sticker=True); time.sleep(1)
-            msg = format_vip_message("BTC", sig_type, price, sl, tps, leverage=lev)
-            send_telegram(msg, image_path=tg_chart_path)
-            st.sidebar.success("Pro Signal Sent!")
-            os.remove(tg_chart_path)
-        else: st.sidebar.error("Failed to generate Pro Chart")
+        send_telegram("", is_sticker=True); time.sleep(1)
+        msg = format_vip_message("BTC", sig_type, price, sl, tps, leverage=lev)
+        send_telegram(msg) # Sent as text only
+        st.sidebar.success("Signal Sent (Text Only)!")
     else: st.sidebar.error("Failed to fetch BTC")
 
-st.title("👻 GHOST PROTOCOL 5.7 : CLEAN & 24/7")
+st.title("👻 GHOST PROTOCOL 5.8 : TEXT ONLY MODE")
 st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
 
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
@@ -332,17 +247,16 @@ def run_scan():
         sig, score, price, leverage, sl, _, reason, _ = analyze_with_vision(df, coin)
         
         if sig != "NEUTRAL":
-            status_area.markdown(f"🎯 **Signal Found!** Generating Pro Chart for {coin}...")
+            status_area.markdown(f"🎯 **Signal Found!** Sending Alert for {coin}...")
             risk = abs(price - sl)
             tps = [price+risk, price+2*risk, price+3*risk, price+4*risk] if sig == "LONG" else [price-risk, price-2*risk, price-3*risk, price-4*risk]
             
-            tg_chart_path = generate_telegram_chart(df, coin, sig, price, sl, tps)
-
-            if tg_chart_path:
-                send_telegram("", is_sticker=True); time.sleep(2)
-                msg = format_vip_message(coin, sig, price, sl, tps, leverage)
-                send_telegram(msg, image_path=tg_chart_path)
-                os.remove(tg_chart_path)
+            # Send Sticker
+            send_telegram("", is_sticker=True); time.sleep(2)
+            
+            # Send Text Message Only
+            msg = format_vip_message(coin, sig, price, sl, tps, leverage)
+            send_telegram(msg)
 
             st.session_state.history.insert(0, {"Time": datetime.now(lz).strftime("%H:%M"), "Coin": coin, "Signal": sig})
             st.session_state.daily_count += 1; st.session_state.signaled_coins.append(coin); save_full_state()
@@ -353,7 +267,7 @@ def run_scan():
 
 with tab1:
     if st.session_state.bot_active:
-        # NO TIME CHECK - RUNS ALWAYS
+        # 24/7 Run Mode
         curr_block = current_time.hour * 4 + (current_time.minute // 15)
         if (curr_block != st.session_state.last_scan_block_id) or st.session_state.force_scan:
             st.session_state.last_scan_block_id = curr_block; st.session_state.force_scan = False; save_full_state(); run_scan()
