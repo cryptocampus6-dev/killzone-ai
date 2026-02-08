@@ -8,10 +8,11 @@ import os
 import json
 import yfinance as yf
 
-# --- FIX: MATPLOTLIB HEADLESS MODE & ADVANCED PLOTTING ---
+# --- FIX: MATPLOTLIB HEADLESS MODE ---
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 import mplfinance as mpf
 import google.generativeai as genai
 from datetime import datetime
@@ -108,67 +109,81 @@ def get_data(symbol):
         return pd.DataFrame()
 
 # ==============================================================================
-# 🎨 ADVANCED CHART GENERATION (THE PRO LOOK)
+# 🎨 ULTRA PRO CHART (POSITION TOOL STYLE)
 # ==============================================================================
 
-# 1. Simple Chart for AI Analysis (Clean, no lines)
+# 1. Simple Chart for AI Analysis
 def generate_ai_chart(df, coin_name):
     filename = f"ai_chart_{coin_name}.png"
     if len(df) < 30: return None
     try:
-        # Use a clean style for AI
         mc = mpf.make_marketcolors(up='#00ff00', down='#ff0000', inherit=True)
         s = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True)
-        mpf.plot(df.tail(60), type='candle', style=s, volume=False, title=f"{coin_name} - AI Input", savefig=filename, figsize=(8, 5))
+        mpf.plot(df.tail(60), type='candle', style=s, volume=False, savefig=filename, figsize=(8, 5))
         return filename
     except: return None
 
-# 2. Pro Chart for Telegram (With Watermark, Entry, SL, TP lines)
+# 2. Telegram Chart with POSITION TOOL (Boxes)
 def generate_telegram_chart(df, coin_name, signal_type, entry, sl, tps):
     filename = f"tg_chart_{coin_name}_{int(time.time())}.png"
-    plot_df = df.tail(80) # Show a bit more history
-    if len(plot_df) < 30: return None
+    plot_df = df.tail(60)
+    if len(plot_df) < 20: return None
 
-    # Custom Style mimicking TradingView Dark
+    # Style
     mc = mpf.make_marketcolors(up='#089981', down='#F23645', edge='inherit', wick='inherit', volume='in', inherit=True)
-    s = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True, facecolor='#131722', figcolor='#131722', rc={'axes.labelcolor': 'white', 'xtick.color': 'white', 'ytick.color': 'white', 'text.color': 'white'})
+    s = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True, facecolor='#131722', figcolor='#131722', 
+                           rc={'axes.labelcolor': 'white', 'xtick.color': 'white', 'ytick.color': 'white', 'text.color': 'white'})
 
-    # Define Horizontal Lines (Entry, SL, TPs)
-    hlines_data = [entry, sl] + tps
-    # Colors: Entry(Blue), SL(Red), TPs(Green)
-    hlines_colors = ['#2962FF', '#F23645'] + ['#089981'] * len(tps)
-    hlines_styles = ['-'] + ['--'] * (len(tps) + 1) # Solid for Entry, dashed for others
+    # Create Plot
+    fig, axes = mpf.plot(plot_df, type='candle', style=s, volume=False, figsize=(12, 7), returnfig=True, tight_layout=True)
+    ax = axes[0]
 
-    fig, axes = mpf.plot(plot_df, type='candle', style=s, volume=False,
-                         hlines=dict(hlines=hlines_data, colors=hlines_colors, linewidths=1.5, linestyles=hlines_styles),
-                         title=f"\n{coin_name} - 15m | {signal_type} Setup",
-                         figsize=(12, 7), returnfig=True, tight_layout=True)
+    # --- DRAW POSITION TOOL (BOXES) ---
+    x_start = 0
+    x_end = len(plot_df) + 8 # Extend to right for labels
+    width = x_end - x_start
     
-    ax_main = axes[0]
+    # 🟢 Profit Box (Green) - From Entry to Highest TP
+    tp_max = tps[-1]
+    if signal_type == "LONG":
+        rect_profit = patches.Rectangle((x_start, entry), width, tp_max - entry, linewidth=0, edgecolor='none', facecolor='#089981', alpha=0.15)
+        rect_loss = patches.Rectangle((x_start, sl), width, entry - sl, linewidth=0, edgecolor='none', facecolor='#F23645', alpha=0.15)
+    else: # SHORT
+        rect_profit = patches.Rectangle((x_start, tp_max), width, entry - tp_max, linewidth=0, edgecolor='none', facecolor='#089981', alpha=0.15)
+        rect_loss = patches.Rectangle((x_start, entry), width, sl - entry, linewidth=0, edgecolor='none', facecolor='#F23645', alpha=0.15)
 
-    # --- ADD LABELS ---
-    p_fmt = ".2f" if entry > 50 else ".4f"
-    
-    # Entry Label
-    ax_main.text(len(plot_df)+1, entry, f" Entry: {entry:{p_fmt}}", color='#2962FF', fontsize=10, fontweight='bold', va='center')
-    
-    # SL Label
-    ax_main.text(len(plot_df)+1, sl, f" SL: {sl:{p_fmt}}", color='#F23645', fontsize=10, va='center')
-    
-    # TP Labels
-    for i, tp_price in enumerate(tps):
-        ax_main.text(len(plot_df)+1, tp_price, f" TP{i+1}: {tp_price:{p_fmt}}", color='#089981', fontsize=9, va='center')
+    ax.add_patch(rect_profit)
+    ax.add_patch(rect_loss)
 
-    # --- ADD WATERMARK (CRYPTO CAMPUS) ---
-    # Place in the center of the chart
+    # --- DRAW LINES & LABELS ---
+    p_fmt = ".2f" if entry > 10 else ".4f"
+    
+    # Helper to add line and label
+    def add_level(price, color, label, style='--'):
+        ax.axhline(price, color=color, linestyle=style, linewidth=1, alpha=0.7)
+        ax.text(len(plot_df) + 0.5, price, f"{label} {price:{p_fmt}}", color='black', fontsize=9, fontweight='bold', 
+                va='center', bbox=dict(facecolor=color, edgecolor='none', alpha=0.8, boxstyle='round,pad=0.2'))
+
+    # Entry
+    add_level(entry, '#787B86', 'ENTRY', '-')
+    
+    # Stop Loss
+    add_level(sl, '#F23645', 'SL')
+    
+    # Take Profits
+    for i, tp in enumerate(tps):
+        add_level(tp, '#089981', f'TP{i+1}')
+
+    # --- WATERMARK ---
     mid_x = len(plot_df) / 2
     mid_y = (plot_df['High'].max() + plot_df['Low'].min()) / 2
-    ax_main.text(mid_x, mid_y, "CRYPTO CAMPUS", fontsize=40, color='white', 
-                 alpha=0.15, ha='center', va='center', fontweight='bold', rotation=0, zorder=0)
+    ax.text(mid_x, mid_y, "CRYPTO CAMPUS VIP", fontsize=35, color='white', alpha=0.1, ha='center', va='center', rotation=0, fontweight='bold')
 
-    # Save the complex figure
-    fig.savefig(filename, facecolor=fig.get_facecolor())
-    plt.close(fig) # Close plot to free memory
+    ax.set_title(f"{coin_name} - {signal_type} SETUP", color='white', fontsize=14, fontweight='bold', pad=20)
+    
+    # Save
+    fig.savefig(filename, facecolor=fig.get_facecolor(), bbox_inches='tight')
+    plt.close(fig)
     return filename
 
 # --- AI ANALYSIS ---
@@ -199,7 +214,7 @@ def analyze_with_vision(df, coin_name):
     # Data for Signal
     curr_close = df['Close'].iloc[-1]
     atr = (df['High'].iloc[-1] - df['Low'].iloc[-1])
-    # Logical SL placement (behind structure)
+    # Logical SL placement
     sl = curr_close - (atr * 2.5) if sig == "LONG" else curr_close + (atr * 2.5)
     
     sl_dist = abs(curr_close - sl) / curr_close * 100
@@ -217,10 +232,27 @@ def format_vip_message(coin, sig, price, sl, tps, leverage):
     sl_roi = round(abs(price-sl)/price*100*leverage, 1)
     risk = abs(price - sl); reward = abs(tps[3] - price)
     rr = round(reward / risk, 1) if risk > 0 else 0
-    direction_text = "🟢Long" if sig == "LONG" else "🔴Short"
+    
+    if sig == "LONG":
+        direction_text = "🟢Long"
+    else:
+        direction_text = "🔴Short"
 
     msg = (
-        f"💎<b>CRYPTO CAMPUS VIP</b>💎\n\n🌟 <b>{coin} USDT</b>\n\n{direction_text}\n\n🚀<b>Isolated</b>\n📈<b>Leverage {leverage}X</b>\n\n💥<b>Entry {price:{p_fmt}}</b>\n\n✅<b>Take Profit</b>\n\n1️⃣ {tps[0]:{p_fmt}} ({roi_1}%)\n2️⃣ {tps[1]:{p_fmt}} ({roi_2}%)\n3️⃣ {tps[2]:{p_fmt}} ({roi_3}%)\n4️⃣ {tps[3]:{p_fmt}} ({roi_4}%)\n\n⭕ <b>Stop Loss {sl:{p_fmt}} ({sl_roi}%)</b>\n\n📝 <b>RR 1:{rr}</b>\n\n⚠️ <b>Margin Use 1%-5%(Trading Plan Use)</b>"
+        f"💎<b>CRYPTO CAMPUS VIP</b>💎\n\n"
+        f"🌟 <b>{coin} USDT</b>\n\n"
+        f"{direction_text}\n\n"
+        f"🚀<b>Isolated</b>\n"
+        f"📈<b>Leverage {leverage}X</b>\n\n"
+        f"💥<b>Entry {price:{p_fmt}}</b>\n\n"
+        f"✅<b>Take Profit</b>\n\n"
+        f"1️⃣ {tps[0]:{p_fmt}} ({roi_1}%)\n"
+        f"2️⃣ {tps[1]:{p_fmt}} ({roi_2}%)\n"
+        f"3️⃣ {tps[2]:{p_fmt}} ({roi_3}%)\n"
+        f"4️⃣ {tps[3]:{p_fmt}} ({roi_4}%)\n\n"
+        f"⭕ <b>Stop Loss {sl:{p_fmt}} ({sl_roi}%)</b>\n\n"
+        f"📝 <b>RR 1:{rr}</b>\n\n"
+        f"⚠️ <b>Margin Use 1%-5%(Trading Plan Use)</b>"
     )
     return msg
 
@@ -290,7 +322,7 @@ if st.sidebar.button("📡 Test Pro Chart & Signal", use_container_width=True):
     else: st.sidebar.error("Failed to fetch BTC")
 
 # --- MAIN ---
-st.title("👻 GHOST PROTOCOL 5.2 : PRO CHARTING")
+st.title("👻 GHOST PROTOCOL 5.3 : ULTRA PRO")
 st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
 
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
@@ -306,7 +338,7 @@ def run_scan():
         df = get_data(coin)
         if df.empty: continue 
 
-        # 1. AI Analysis (uses simple chart internally)
+        # 1. AI Analysis
         sig, score, price, leverage, sl, _, reason, _ = analyze_with_vision(df, coin)
         
         if sig != "NEUTRAL":
@@ -323,7 +355,7 @@ def run_scan():
                 send_telegram("", is_sticker=True); time.sleep(2)
                 msg = format_vip_message(coin, sig, price, sl, tps, leverage)
                 send_telegram(msg, image_path=tg_chart_path)
-                os.remove(tg_chart_path) # Clean up chart
+                os.remove(tg_chart_path)
 
             st.session_state.history.insert(0, {"Time": datetime.now(lz).strftime("%H:%M"), "Coin": coin, "Signal": sig})
             st.session_state.daily_count += 1; st.session_state.signaled_coins.append(coin); save_full_state()
