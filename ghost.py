@@ -28,6 +28,7 @@ START_HOUR = 7
 END_HOUR = 21
 MAX_DAILY_SIGNALS = 8
 DATA_FILE = "bot_data.json"
+RISK_PER_TRADE_ROI = 60 # Max Loss % allowed per trade
 
 # Setup Gemini AI
 try:
@@ -128,6 +129,7 @@ def generate_chart_image(df, coin_name):
         mc = mpf.make_marketcolors(up='#00ff00', down='#ff0000', inherit=True)
         s  = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True)
         
+        # We plot EMA 200 just for AI context, but logic is Pure Price Action
         ema200 = df['Close'].ewm(span=200).mean()
         plot_df = df.tail(60)
         
@@ -141,7 +143,7 @@ def generate_chart_image(df, coin_name):
             style=s,
             volume=True,
             addplot=add_plots,
-            title=f"{coin_name} - 15m (AI Vision)",
+            title=f"{coin_name} - 15m (Ghost Protocol V5)",
             savefig=filename,
             figsize=(10, 6)
         )
@@ -150,7 +152,7 @@ def generate_chart_image(df, coin_name):
         return None, str(e)
 
 # ==============================================================================
-# 👁️ CORE: AI VISION ANALYSIS
+# 👁️ CORE: AI VISION ANALYSIS (UPDATED PROMPT)
 # ==============================================================================
 
 def analyze_with_vision(df, coin_name):
@@ -163,12 +165,32 @@ def analyze_with_vision(df, coin_name):
 
     try:
         img = genai.upload_file(chart_path)
+        
+        # --- THE MASTER PROMPT ---
         prompt = """
-        You are a professional crypto day trader. Analyze this 15-minute chart image.
+        You are an elite Crypto Trader specializing in Malaysian SNR, ICT (Smart Money Concepts), Liquidity, and Price Action.
+        Analyze this 15-minute chart image deeply.
+        
+        CHECKLIST FOR ENTRY:
+        1. **Liquidity (The Fuel):** Look for Liquidity Sweeps (Raids) of previous Highs/Lows (BSL/SSL). Did a wick grab liquidity and reverse?
+        2. **Market Structure (The Map):** Look for MSS (Market Structure Shift) or CHoCH (Change of Character) with displacement.
+        3. **Malaysian SNR (The Level):** Look for QML (Quasimodo), RBS, SBR, or MPL (Maximum Pain Level) setups.
+        4. **ICT Arrays (The Trigger):** Identify Order Blocks (OB) or FVG (Fair Value Gaps) that are being respected.
+        5. **Price Action:** Look for Pinbars, Engulfing candles, or Rejection wicks at key levels.
+        
+        STRICT RULES:
+        - IGNORE Indicators (RSI/MACD). Focus ONLY on Candles and Structure.
+        - If the market is chopping (Ranging) inside a narrow zone, signal NEUTRAL.
+        - Only signal if you see a CLEAR setup from the checklist above.
+        
         Output ONLY a JSON string:
-        {"signal": "LONG", "score": 90, "reason": "Reason in 10 words"}
-        Possible signals: "LONG", "SHORT", "NEUTRAL". Score: 0-100.
+        {"signal": "LONG", "score": 90, "reason": "Liquidity Sweep of Low + MSS + Rejection from Bullish OB", "sl_location": "Just below the swing low"}
+        
+        Possible signals: "LONG", "SHORT", "NEUTRAL".
+        Score: 0-100 (Must be > 85 for a signal).
+        Reason: Use professional terms (e.g., "Liquidity Grab", "Mitigation", "QML"). Max 10 words.
         """
+        
         response = model.generate_content([prompt, img])
         result_text = response.text.strip().replace("```json", "").replace("```", "")
         result = json.loads(result_text)
@@ -183,17 +205,37 @@ def analyze_with_vision(df, coin_name):
     except Exception as e:
         return "NEUTRAL", 0, 0, 0, 0, 0, f"AI Err: {str(e)[:20]}", chart_path
 
+    # --- DYNAMIC LEVERAGE CALCULATION ---
     curr_close = df['Close'].iloc[-1]
+    
+    # Calculate SL based on Swing Low/High (Simplified logic using ATR for safety fallback)
     atr = (df['High'].iloc[-1] - df['Low'].iloc[-1])
-    sl_long = curr_close - (atr * 2)
-    sl_short = curr_close + (atr * 2)
+    
+    if sig == "LONG":
+        # Logical SL: Below recent structure (using ATR as buffer)
+        sl_price = curr_close - (atr * 2) 
+        # Calculate Distance %
+        sl_dist_percent = abs(curr_close - sl_price) / curr_close * 100
+    elif sig == "SHORT":
+        # Logical SL: Above recent structure
+        sl_price = curr_close + (atr * 2)
+        sl_dist_percent = abs(sl_price - curr_close) / curr_close * 100
+    else:
+        sl_price = 0
+        sl_dist_percent = 1 # Dummy
 
-    if score < 85: sig = "NEUTRAL"
+    # --- MAGIC FORMULA: Leverage = 60 / SL Distance % ---
+    if sl_dist_percent > 0:
+        raw_leverage = RISK_PER_TRADE_ROI / sl_dist_percent
+        # Cap leverage between 5x and 75x for safety
+        leverage = int(max(5, min(raw_leverage, 75)))
+    else:
+        leverage = 20 # Default fallback
 
-    return sig, score, curr_close, atr, sl_long, sl_short, reason, chart_path
+    return sig, score, curr_close, leverage, sl_price, 0, reason, chart_path
 
 # ==============================================================================
-# MAIN APP LOOP (UI UPDATE)
+# MAIN APP LOOP
 # ==============================================================================
 
 saved_data = load_data()
@@ -205,12 +247,12 @@ if 'force_scan' not in st.session_state: st.session_state.force_scan = False
 if 'coins' not in st.session_state:
     st.session_state.coins = ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "LTC", "DOT", "MATIC", "UNI", "BCH", "FIL", "NEAR", "ATOM", "ICP", "IMX", "APT"]
 
-# --- SIDEBAR DESIGN START ---
+# --- SIDEBAR ---
 st.sidebar.title("🎛️ Control Panel")
 current_time = datetime.now(lz)
 is_within_hours = START_HOUR <= current_time.hour < END_HOUR
 
-# Status Indicator
+# Status
 status_color = "red"; status_text = "STOPPED 🔴"
 if st.session_state.bot_active:
     if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
@@ -228,7 +270,7 @@ st.sidebar.caption("Leverage: Dynamic (Risk Based)")
 if st.session_state.signaled_coins:
     st.sidebar.caption(f"Today: {', '.join(st.session_state.signaled_coins)}")
 
-# Main Controls
+# Controls
 col1, col2 = st.sidebar.columns(2)
 if col1.button("▶️ START", use_container_width=True): st.session_state.bot_active = True; save_full_state(); st.rerun()
 if col2.button("⏹️ STOP", use_container_width=True): st.session_state.bot_active = False; save_full_state(); st.rerun()
@@ -244,7 +286,6 @@ if st.sidebar.button("🔄 RESET LIMIT (Admin)", use_container_width=True):
     st.rerun()
 
 st.sidebar.markdown("---")
-# Coin Manager
 st.sidebar.subheader("🪙 Coin Manager")
 new_coin = st.sidebar.text_input("Add Coin (e.g. SUI)", "").upper()
 if st.sidebar.button("➕ Add Coin"):
@@ -258,34 +299,27 @@ if st.sidebar.button("🗑️ Remove Selected"):
 
 st.sidebar.markdown("---")
 
-# --- HELPER TO FORMAT MSG ---
-def format_vip_message(coin, sig, price, sl, tps, leverage=50):
+# --- FORMATTING FUNCTION ---
+def format_vip_message(coin, sig, price, sl, tps, leverage):
     p_fmt = ".4f" if price < 50 else ".2f"
     
-    # Calculate ROIs for TPs
     roi_1 = round(abs(tps[0]-price)/price*100*leverage, 1)
     roi_2 = round(abs(tps[1]-price)/price*100*leverage, 1)
     roi_3 = round(abs(tps[2]-price)/price*100*leverage, 1)
     roi_4 = round(abs(tps[3]-price)/price*100*leverage, 1)
     
-    # Calculate SL ROI
     sl_roi = round(abs(price-sl)/price*100*leverage, 1)
     
-    # Calculate RR (Risk to Reward to TP4)
     risk = abs(price - sl)
     reward = abs(tps[3] - price)
-    rr = round(reward / risk, 1)
+    rr = round(reward / risk, 1) if risk > 0 else 0
     
     if sig == "LONG":
         direction_icon = "🟢"
         direction_text = "Long"
-        # Ensure SL is below price for visual consistency
-        if sl > price: sl = price * 0.98 
     else:
         direction_icon = "🔴"
         direction_text = "Short"
-        # Ensure SL is above price
-        if sl < price: sl = price * 1.02
 
     msg = (
         f"💎<b>CRYPTO CAMPUS VIP</b>💎\n\n"
@@ -312,28 +346,32 @@ if st.sidebar.button("📡 Test Telegram & Chart", use_container_width=True):
     if not test_df.empty:
         c_path, c_err = generate_chart_image(test_df, "BTC")
         if c_path:
-            # 1. Send Sticker FIRST
+            # 1. Send Sticker
             send_telegram("", is_sticker=True)
-            time.sleep(1) # Wait for sticker
+            time.sleep(1)
             
-            # 2. Generate Msg
+            # 2. Generate Real-Like Test Data
             price = test_df['Close'].iloc[-1]
-            tps = [price*1.006, price*1.012, price*1.018, price*1.024]
-            sl = price*0.995
+            # Simulate a 1% SL distance for test
+            sl = price * 0.99 
+            sl_dist = 1.0
+            lev = int(60 / sl_dist) # Logic Test: 60x leverage
             
-            msg = format_vip_message("BTC", "LONG", price, sl, tps, leverage=50)
+            tps = [price*1.005, price*1.01, price*1.015, price*1.02]
             
-            # 3. Send Photo with Caption
+            msg = format_vip_message("BTC", "LONG", price, sl, tps, leverage=lev)
+            
+            # 3. Send
             send_telegram(msg, image_path=c_path)
-            st.sidebar.success("Test Signal Sent!")
+            st.sidebar.success(f"Test Signal Sent! (Lev: {lev}x)")
         else:
             st.sidebar.error(f"Failed: {c_err}")
     else:
         st.sidebar.error("Failed to fetch BTC")
 
 # --- MAIN CONTENT ---
-st.title("👻 GHOST PROTOCOL 4.3 : VIP EDITION")
-st.write("Engine: **Google Gemini 1.5 Pro** | Strategy: **Vision AI**")
+st.title("👻 GHOST PROTOCOL 5.0 : THE MASTERPIECE")
+st.write("Engine: **Gemini 1.5 Pro** | Concepts: **Malaysian SNR, ICT, Liquidity**")
 st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
 
 coins_list = st.session_state.coins
@@ -355,7 +393,8 @@ def run_scan():
             df = get_data(coin)
             if df.empty: continue 
 
-            sig, score, price, atr, sl_long, sl_short, reason, chart_path = analyze_with_vision(df, coin)
+            # AI Analysis + Dynamic Leverage Calculation
+            sig, score, price, leverage, sl, _, reason, chart_path = analyze_with_vision(df, coin)
             
             if score >= 85: score_color = "green"
             elif score <= 15: score_color = "red"
@@ -369,24 +408,26 @@ def run_scan():
 
             if sig != "NEUTRAL":
                 if st.session_state.daily_count < MAX_DAILY_SIGNALS:
-                    # 1. Send Sticker FIRST
-                    send_telegram("", is_sticker=True)
-                    time.sleep(2) # Small delay for order
+                    send_telegram("", is_sticker=True); time.sleep(2)
                     
-                    # 2. Prepare Data
+                    # Calculate TPs based on Risk:Reward
+                    risk_dist = abs(price - sl)
                     if sig == "LONG":
-                        sl = sl_long 
-                        tp_dist = (price - sl) * 2
-                        tps = [price + (tp_dist * 0.6 * x) for x in range(1, 5)]
+                        tps = [
+                            price + (risk_dist * 1), # 1:1
+                            price + (risk_dist * 2), # 1:2
+                            price + (risk_dist * 3), # 1:3
+                            price + (risk_dist * 4)  # 1:4
+                        ]
                     else:
-                        sl = sl_short
-                        tp_dist = (sl - price) * 2
-                        tps = [price - (tp_dist * 0.6 * x) for x in range(1, 5)]
+                        tps = [
+                            price - (risk_dist * 1),
+                            price - (risk_dist * 2),
+                            price - (risk_dist * 3),
+                            price - (risk_dist * 4)
+                        ]
                     
-                    # 3. Format Message
-                    msg = format_vip_message(coin, sig, price, sl, tps, leverage=50)
-
-                    # 4. Send Chart + Caption
+                    msg = format_vip_message(coin, sig, price, sl, tps, leverage)
                     send_telegram(msg, image_path=chart_path)
                     
                     st.session_state.history.insert(0, {"Time": current_time.strftime("%H:%M"), "Coin": coin, "Signal": sig, "Reason": reason})
