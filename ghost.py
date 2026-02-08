@@ -8,7 +8,7 @@ import os
 import json
 import yfinance as yf
 
-# --- FIX: MATPLOTLIB HEADLESS MODE (VERY IMPORTANT) ---
+# --- FIX: MATPLOTLIB HEADLESS MODE ---
 import matplotlib
 matplotlib.use('Agg') # Server එකේ චාට් අඳින්න මේක අනිවාර්යයි
 import mplfinance as mpf
@@ -59,7 +59,6 @@ def load_data():
 
 def save_full_state():
     data = st.session_state.to_dict()
-    # Safe save
     serializable_data = {k: v for k, v in data.items() if k in ["bot_active", "daily_count", "last_reset_date", "signaled_coins", "history", "last_scan_block_id", "sent_morning", "sent_goodbye", "scan_log", "force_scan"]}
     with open(DATA_FILE, "w") as f: json.dump(serializable_data, f)
 
@@ -79,7 +78,7 @@ def send_telegram(msg, is_sticker=False, image_path=None):
     except Exception as e:
         print(f"Telegram Error: {e}")
 
-# --- DATA FETCHING (ROBUST V2) ---
+# --- DATA FETCHING ---
 def get_data(symbol):
     try:
         ticker = f"{symbol}-USD"
@@ -87,11 +86,9 @@ def get_data(symbol):
         if df.empty: return pd.DataFrame()
 
         df = df.reset_index()
-        # Fix MultiIndex (Common yfinance issue)
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.droplevel(1)
         
-        # Standardize Columns
         cols_map = {}
         for col in df.columns:
             c = str(col).lower()
@@ -107,7 +104,6 @@ def get_data(symbol):
         if 'Date' in df.columns:
             df = df.set_index('Date')
         
-        # Ensure numeric
         numeric_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
         for c in numeric_cols:
             if c in df.columns:
@@ -119,11 +115,10 @@ def get_data(symbol):
         print(f"Data Error: {e}")
         return pd.DataFrame()
 
-# --- CHART GENERATION (DIAGNOSTIC MODE) ---
+# --- CHART GENERATION (FIXED) ---
 def generate_chart_image(df, coin_name):
     filename = f"chart_{coin_name}.png"
     
-    # Check Data
     if 'Close' not in df.columns or 'Open' not in df.columns:
         return None, f"Missing Columns. Found: {df.columns.tolist()}"
     if len(df) < 5:
@@ -136,7 +131,6 @@ def generate_chart_image(df, coin_name):
         ema200 = df['Close'].ewm(span=200).mean()
         plot_df = df.tail(60)
         
-        # Safe Addplot
         add_plots = []
         if len(plot_df) == len(ema200.tail(60)):
             add_plots = [mpf.make_addplot(ema200.tail(60), color='blue', width=1.5)]
@@ -149,12 +143,12 @@ def generate_chart_image(df, coin_name):
             addplot=add_plots,
             title=f"{coin_name} - 15m (AI Vision)",
             savefig=filename,
-            figsize=(10, 6),
-            off_image=True # Critical for server
+            figsize=(10, 6)
+            # REMOVED off_image=True as it caused the error
         )
         return filename, None
     except Exception as e:
-        return None, str(e) # Catch the REAL error
+        return None, str(e)
 
 # ==============================================================================
 # 👁️ CORE: AI VISION ANALYSIS
@@ -233,7 +227,7 @@ if st.sidebar.button("📡 Test Telegram & Chart (Diagnose)"):
             st.image(c_path, caption="Preview", use_column_width=True)
         else:
             st.sidebar.error("❌ CHART FAILED!")
-            st.sidebar.error(f"Error Details: {c_err}") # <-- මෙන්න මේකයි අපිට ඕන
+            st.sidebar.error(f"Error Details: {c_err}")
     else:
         st.sidebar.error("❌ Failed to fetch BTC data (Empty DataFrame)")
 
@@ -261,8 +255,8 @@ if col2.button("⏹️ STOP"): st.session_state.bot_active = False; save_full_st
 if st.sidebar.button("⚡ FORCE SCAN NOW"): st.session_state.force_scan = True; st.rerun()
 if st.sidebar.button("🔄 RESET LIMIT"): st.session_state.daily_count = 0; st.session_state.signaled_coins = []; save_full_state(); st.rerun()
 
-st.title("👻 GHOST PROTOCOL 4.0 : DIAGNOSTICS")
-st.write("Engine: **Google Gemini 1.5 Pro** | Status: **System Check Mode**")
+st.title("👻 GHOST PROTOCOL 4.1 : STABLE")
+st.write("Engine: **Google Gemini 1.5 Pro** | Status: **Chart Engine Fixed** ✅")
 
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
 
