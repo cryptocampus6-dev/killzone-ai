@@ -30,10 +30,10 @@ MAX_DAILY_SIGNALS = 8
 DATA_FILE = "bot_data.json"
 RISK_PER_TRADE_ROI = 60 # Max Loss % allowed per trade
 
-# Setup Gemini AI (Fixed Model Name)
+# Setup Gemini AI
 try:
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash') # මම මෙතන නම හරියටම හැදුවා
+    model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
     st.error(f"API Key Error: {e}")
 
@@ -60,7 +60,6 @@ def load_data():
     return default
 
 def save_full_state():
-    # Helper to clean session state before saving
     serializable_data = {
         "bot_active": st.session_state.get("bot_active", True),
         "daily_count": st.session_state.get("daily_count", 0),
@@ -159,8 +158,11 @@ def analyze_with_vision(df, coin_name):
     try:
         img = genai.upload_file(chart_path)
         prompt = """
-        Elite Crypto Trader analysis: Malaysian SNR, ICT, Liquidity & Price Action.
-        Output ONLY JSON: {"signal": "LONG", "score": 90, "reason": "MSS + FVG rejection"}
+        You are an elite Crypto Trader specializing in Malaysian SNR, ICT (Smart Money Concepts), Liquidity, and Price Action.
+        Analyze this 15-minute chart image.
+        Output ONLY a JSON string:
+        {"signal": "LONG", "score": 90, "reason": "Liquidity Sweep + MSS + FVG rejection"}
+        Possible signals: "LONG", "SHORT", "NEUTRAL". Score: 0-100 (>85 for signal).
         """
         response = model.generate_content([prompt, img])
         result = json.loads(response.text.strip().replace("```json", "").replace("```", ""))
@@ -180,6 +182,44 @@ def analyze_with_vision(df, coin_name):
     leverage = int(max(5, min(RISK_PER_TRADE_ROI / sl_dist, 75))) if sl_dist > 0 else 20
 
     return (sig if score > 85 else "NEUTRAL"), score, curr_close, leverage, sl, 0, reason, chart_path
+
+# --- FORMATTING FUNCTION (EXACT VIP FORMAT) ---
+def format_vip_message(coin, sig, price, sl, tps, leverage):
+    p_fmt = ".4f" if price < 50 else ".2f"
+    
+    roi_1 = round(abs(tps[0]-price)/price*100*leverage, 1)
+    roi_2 = round(abs(tps[1]-price)/price*100*leverage, 1)
+    roi_3 = round(abs(tps[2]-price)/price*100*leverage, 1)
+    roi_4 = round(abs(tps[3]-price)/price*100*leverage, 1)
+    
+    sl_roi = round(abs(price-sl)/price*100*leverage, 1)
+    
+    risk = abs(price - sl)
+    reward = abs(tps[3] - price)
+    rr = round(reward / risk, 1) if risk > 0 else 0
+    
+    if sig == "LONG":
+        direction_text = "🟢Long"
+    else:
+        direction_text = "🔴Short"
+
+    msg = (
+        f"💎<b>CRYPTO CAMPUS VIP</b>💎\n\n"
+        f"🌟 <b>{coin} USDT</b>\n\n"
+        f"{direction_text}\n\n"
+        f"🚀<b>Isolated</b>\n"
+        f"📈<b>Leverage {leverage}X</b>\n\n"
+        f"💥<b>Entry {price:{p_fmt}}</b>\n\n"
+        f"✅<b>Take Profit</b>\n\n"
+        f"1️⃣ {tps[0]:{p_fmt}} ({roi_1}%)\n"
+        f"2️⃣ {tps[1]:{p_fmt}} ({roi_2}%)\n"
+        f"3️⃣ {tps[2]:{p_fmt}} ({roi_3}%)\n"
+        f"4️⃣ {tps[3]:{p_fmt}} ({roi_4}%)\n\n"
+        f"⭕ <b>Stop Loss {sl:{p_fmt}} ({sl_roi}%)</b>\n\n"
+        f"📝 <b>RR 1:{rr}</b>\n\n"
+        f"⚠️ <b>Margin Use 1%-5%(Trading Plan Use)</b>"
+    )
+    return msg
 
 # ==============================================================================
 # MAIN UI
@@ -226,20 +266,36 @@ if st.sidebar.button("🗑️ Remove"):
     if rem_coin in st.session_state.coins:
         st.session_state.coins.remove(rem_coin); save_full_state(); st.rerun()
 
-# Test Button
+# Test Button (UPDATED WITH REAL VIP FORMAT)
 st.sidebar.markdown("---")
 if st.sidebar.button("📡 Test Telegram & Chart", use_container_width=True):
+    st.sidebar.info("Generating BTC Chart...")
     test_df = get_data("BTC")
     if not test_df.empty:
         c_path, _ = generate_chart_image(test_df, "BTC")
         if c_path:
+            # 1. Send Sticker
             send_telegram("", is_sticker=True)
             time.sleep(1)
-            send_telegram("💎<b>GHOST TEST SUCCESS</b>💎\nSystem Ready.", image_path=c_path)
-            st.sidebar.success("Sent!")
+            
+            # 2. Generate Real-Like Test Data
+            price = test_df['Close'].iloc[-1]
+            sl = price * 0.995 # 0.5% SL
+            risk = abs(price - sl)
+            tps = [price + risk*1, price + risk*2, price + risk*3, price + risk*4]
+            lev = 50
+            
+            # 3. Format Message
+            msg = format_vip_message("BTC", "LONG", price, sl, tps, leverage=lev)
+            
+            # 4. Send
+            send_telegram(msg, image_path=c_path)
+            st.sidebar.success("VIP Test Signal Sent!")
+        else:
+            st.sidebar.error("Failed to generate chart")
 
 # --- MAIN ---
-st.title("👻 GHOST PROTOCOL 5.0 : THE MASTERPIECE")
+st.title("👻 GHOST PROTOCOL 5.1 : VIP FINAL")
 st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
 
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
@@ -261,11 +317,14 @@ def run_scan():
             send_telegram("", is_sticker=True); time.sleep(2)
             # TP calc
             risk = abs(price - sl)
-            tps = [price + risk if sig == "LONG" else price - risk, price + 2*risk if sig == "LONG" else price - 2*risk, price + 3*risk if sig == "LONG" else price - 3*risk, price + 4*risk if sig == "LONG" else price - 4*risk]
+            if sig == "LONG":
+                tps = [price+risk, price+2*risk, price+3*risk, price+4*risk]
+            else:
+                tps = [price-risk, price-2*risk, price-3*risk, price-4*risk]
             
-            p_fmt = ".4f" if price < 50 else ".2f"
-            msg = f"💎<b>CRYPTO CAMPUS VIP</b>💎\n\n🌟 <b>{coin} USDT</b>\n\n{'🟢<b>Long</b>' if sig == 'LONG' else '🔴<b>Short</b>'}\n\n🚀<b>Isolated</b>\n📈<b>Leverage {leverage}X</b>\n\n💥<b>Entry {price:{p_fmt}}</b>\n\n✅<b>Take Profit</b>\n\n1️⃣ {tps[0]:{p_fmt}}\n2️⃣ {tps[1]:{p_fmt}}\n3️⃣ {tps[2]:{p_fmt}}\n4️⃣ {tps[3]:{p_fmt}}\n\n⭕ <b>Stop Loss {sl:{p_fmt}}</b>\n\n📝 <b>RR 1:4.0</b>\n\n⚠️ <b>Margin Use 1%-5%</b>"
+            msg = format_vip_message(coin, sig, price, sl, tps, leverage)
             send_telegram(msg, image_path=chart_path)
+            
             st.session_state.history.insert(0, {"Time": datetime.now(lz).strftime("%H:%M"), "Coin": coin, "Signal": sig})
             st.session_state.daily_count += 1; st.session_state.signaled_coins.append(coin); save_full_state()
             if st.session_state.daily_count >= MAX_DAILY_SIGNALS: break
