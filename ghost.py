@@ -258,37 +258,72 @@ if st.sidebar.button("🗑️ Remove Selected"):
 
 st.sidebar.markdown("---")
 
-# --- TEST BUTTON WITH REAL SIGNAL FORMAT ---
+# --- HELPER TO FORMAT MSG ---
+def format_vip_message(coin, sig, price, sl, tps, leverage=50):
+    p_fmt = ".4f" if price < 50 else ".2f"
+    
+    # Calculate ROIs for TPs
+    roi_1 = round(abs(tps[0]-price)/price*100*leverage, 1)
+    roi_2 = round(abs(tps[1]-price)/price*100*leverage, 1)
+    roi_3 = round(abs(tps[2]-price)/price*100*leverage, 1)
+    roi_4 = round(abs(tps[3]-price)/price*100*leverage, 1)
+    
+    # Calculate SL ROI
+    sl_roi = round(abs(price-sl)/price*100*leverage, 1)
+    
+    # Calculate RR (Risk to Reward to TP4)
+    risk = abs(price - sl)
+    reward = abs(tps[3] - price)
+    rr = round(reward / risk, 1)
+    
+    if sig == "LONG":
+        direction_icon = "🟢"
+        direction_text = "Long"
+        # Ensure SL is below price for visual consistency
+        if sl > price: sl = price * 0.98 
+    else:
+        direction_icon = "🔴"
+        direction_text = "Short"
+        # Ensure SL is above price
+        if sl < price: sl = price * 1.02
+
+    msg = (
+        f"💎<b>CRYPTO CAMPUS VIP</b>💎\n\n"
+        f"🌟 <b>{coin} USDT</b>\n\n"
+        f"{direction_icon}<b>{direction_text}</b>\n\n"
+        f"🚀<b>Isolated</b>\n"
+        f"📈<b>Leverage {leverage}X</b>\n\n"
+        f"💥<b>Entry {price:{p_fmt}}</b>\n\n"
+        f"✅<b>Take Profit</b>\n\n"
+        f"1️⃣ {tps[0]:{p_fmt}} ({roi_1}%)\n"
+        f"2️⃣ {tps[1]:{p_fmt}} ({roi_2}%)\n"
+        f"3️⃣ {tps[2]:{p_fmt}} ({roi_3}%)\n"
+        f"4️⃣ {tps[3]:{p_fmt}} ({roi_4}%)\n\n"
+        f"⭕ <b>Stop Loss {sl:{p_fmt}} ({sl_roi}%)</b>\n\n"
+        f"📝 <b>RR 1:{rr}</b>\n\n"
+        f"⚠️ <b>Margin Use 1%-5%(Trading Plan Use)</b>"
+    )
+    return msg
+
+# --- TEST BUTTON ---
 if st.sidebar.button("📡 Test Telegram & Chart", use_container_width=True):
     st.sidebar.info("Generating BTC Chart...")
     test_df = get_data("BTC")
     if not test_df.empty:
         c_path, c_err = generate_chart_image(test_df, "BTC")
         if c_path:
-            # Generate Dummy Data for Test
-            current_price = test_df['Close'].iloc[-1]
-            p_fmt = ".2f"
+            # 1. Send Sticker FIRST
+            send_telegram("", is_sticker=True)
+            time.sleep(1) # Wait for sticker
             
-            # Simulated LONG Signal
-            tp1 = current_price * 1.01
-            tp2 = current_price * 1.02
-            tp3 = current_price * 1.03
-            sl = current_price * 0.98
+            # 2. Generate Msg
+            price = test_df['Close'].iloc[-1]
+            tps = [price*1.006, price*1.012, price*1.018, price*1.024]
+            sl = price*0.995
             
-            msg = (
-                f"💎<b>CRYPTO CAMPUS AI VISION (TEST)</b>💎\n\n"
-                f"👁️ <b>BTC USDT</b>\n\n"
-                f"🟢 <b>LONG Signal</b>\n"
-                f"🧠 <b>Reason:</b> Test Signal for verification.\n\n"
-                f"💥<b>Entry {current_price:{p_fmt}}</b>\n\n"
-                f"✅<b>Targets:</b>\n"
-                f"1️⃣ {tp1:{p_fmt}}\n"
-                f"2️⃣ {tp2:{p_fmt}}\n"
-                f"3️⃣ {tp3:{p_fmt}}\n\n"
-                f"⭕ <b>Stop Loss {sl:{p_fmt}}</b>\n\n"
-                f"⚠️ <b>Risk: 1-2% Only</b>"
-            )
+            msg = format_vip_message("BTC", "LONG", price, sl, tps, leverage=50)
             
+            # 3. Send Photo with Caption
             send_telegram(msg, image_path=c_path)
             st.sidebar.success("Test Signal Sent!")
         else:
@@ -297,7 +332,7 @@ if st.sidebar.button("📡 Test Telegram & Chart", use_container_width=True):
         st.sidebar.error("Failed to fetch BTC")
 
 # --- MAIN CONTENT ---
-st.title("👻 GHOST PROTOCOL 4.2 : FINAL VISION")
+st.title("👻 GHOST PROTOCOL 4.3 : VIP EDITION")
 st.write("Engine: **Google Gemini 1.5 Pro** | Strategy: **Vision AI**")
 st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
 
@@ -334,35 +369,26 @@ def run_scan():
 
             if sig != "NEUTRAL":
                 if st.session_state.daily_count < MAX_DAILY_SIGNALS:
-                    send_telegram("", is_sticker=True); time.sleep(3)
+                    # 1. Send Sticker FIRST
+                    send_telegram("", is_sticker=True)
+                    time.sleep(2) # Small delay for order
                     
+                    # 2. Prepare Data
                     if sig == "LONG":
                         sl = sl_long 
                         tp_dist = (price - sl) * 2
                         tps = [price + (tp_dist * 0.6 * x) for x in range(1, 5)]
-                        emoji = "🟢"; side = "Long"
                     else:
                         sl = sl_short
                         tp_dist = (sl - price) * 2
                         tps = [price - (tp_dist * 0.6 * x) for x in range(1, 5)]
-                        emoji = "🔴"; side = "Short"
-
-                    p_fmt = ".4f" if price < 50 else ".2f"
                     
-                    msg = (
-                        f"💎<b>CRYPTO CAMPUS AI VISION</b>💎\n\n"
-                        f"👁️ <b>{coin} USDT</b>\n\n"
-                        f"{emoji} <b>{side} Signal</b>\n"
-                        f"🧠 <b>Reason:</b> {reason}\n\n"
-                        f"💥<b>Entry {price:{p_fmt}}</b>\n\n"
-                        f"✅<b>Targets:</b>\n"
-                        f"1️⃣ {tps[0]:{p_fmt}}\n"
-                        f"2️⃣ {tps[1]:{p_fmt}}\n"
-                        f"3️⃣ {tps[2]:{p_fmt}}\n\n"
-                        f"⭕ <b>Stop Loss {sl:{p_fmt}}</b>\n\n"
-                        f"⚠️ <b>Risk: 1-2% Only</b>"
-                    )
+                    # 3. Format Message
+                    msg = format_vip_message(coin, sig, price, sl, tps, leverage=50)
+
+                    # 4. Send Chart + Caption
                     send_telegram(msg, image_path=chart_path)
+                    
                     st.session_state.history.insert(0, {"Time": current_time.strftime("%H:%M"), "Coin": coin, "Signal": sig, "Reason": reason})
                     st.session_state.daily_count += 1
                     st.session_state.signaled_coins.append(coin)
