@@ -20,7 +20,7 @@ from datetime import datetime
 # ==============================================================================
 GEMINI_API_KEY = "AIzaSyAQhJmvE8VkImSSN-Aiv98nOv_1prfD7QY" 
 TELEGRAM_BOT_TOKEN = "8524773131:AAG7YAYrzt9HYu34UhUJ0af_TDamhyndBas"
-CHANNEL_ID = "-1003534299054"
+CHANNEL_ID = "-1003731551541"
 # Sticker ID එක වැරදි නම් වෙන එකක් දාන්න ඕන. දැනට මේක තියමු.
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWlMq--iOTVBE4BA"
 
