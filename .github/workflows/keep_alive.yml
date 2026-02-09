@@ -2,8 +2,7 @@ name: Wake up Streamlit App
 
 on:
   schedule:
-    # හැම විනාඩි 15 කට වරක්ම ක්‍රියාත්මක වේ
-    - cron: "*/15 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 jobs:
