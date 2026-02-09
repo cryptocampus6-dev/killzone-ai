@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import pandas_ta as ta
@@ -26,6 +25,8 @@ CHANNEL_ID = "-1003534299054"
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWlMq--iOTVBE4BA"
 
 # --- CONFIGURATION ---
+START_HOUR = 7   # 07:00 AM
+END_HOUR = 21    # 09:00 PM
 MAX_DAILY_SIGNALS = 8
 DATA_FILE = "bot_data.json"
 RISK_PER_TRADE_ROI = 60 
@@ -52,8 +53,16 @@ def load_data():
         try:
             with open(DATA_FILE, "r") as f:
                 data = json.load(f)
+                # Reset if new day
                 if data.get("last_reset_date") != datetime.now(lz).strftime("%Y-%m-%d"):
-                    data.update({"daily_count": 0, "signaled_coins": [], "last_reset_date": datetime.now(lz).strftime("%Y-%m-%d"), "sent_morning": False, "sent_goodbye": False, "scan_log": ""})
+                    data.update({
+                        "daily_count": 0, 
+                        "signaled_coins": [], 
+                        "last_reset_date": datetime.now(lz).strftime("%Y-%m-%d"), 
+                        "sent_morning": False, 
+                        "sent_goodbye": False, 
+                        "scan_log": ""
+                    })
                     with open(DATA_FILE, "w") as fw: json.dump(data, fw)
                 return data
         except: return default
@@ -70,7 +79,6 @@ def send_telegram(msg, is_sticker=False):
         if is_sticker:
             requests.post(url + "sendSticker", data={"chat_id": CHANNEL_ID, "sticker": STICKER_ID})
         else:
-            # Send TEXT ONLY
             requests.post(url + "sendMessage", data={"chat_id": CHANNEL_ID, "text": msg, "parse_mode": "HTML"})
     except Exception as e:
         print(f"Telegram Error: {e}")
@@ -103,14 +111,13 @@ def get_data(symbol):
         return pd.DataFrame()
 
 # ==============================================================================
-# 🧠 AI CHART (INTERNAL ONLY - NOT SENT)
+# 🧠 AI CHART (INTERNAL)
 # ==============================================================================
 
 def generate_ai_chart(df, coin_name):
     filename = f"ai_chart_{coin_name}.png"
     if len(df) < 30: return None
     try:
-        # Simple chart for AI to analyze
         mc = mpf.make_marketcolors(up='#00FF00', down='#FF0000', inherit=True)
         s = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True)
         mpf.plot(df.tail(60), type='candle', style=s, volume=False, savefig=filename, figsize=(8, 5))
@@ -119,35 +126,30 @@ def generate_ai_chart(df, coin_name):
 
 # --- AI ANALYSIS ---
 def analyze_with_vision(df, coin_name):
-    # We still generate the chart for AI, but we won't send it to Telegram
     ai_chart_path = generate_ai_chart(df, coin_name)
     if not ai_chart_path: return "NEUTRAL", 0, 0, 0, 0, 0, "Chart Error", None
 
     try:
         img = genai.upload_file(ai_chart_path)
         prompt = """
-        You are an elite Crypto Trader (SMC/ICT/Price Action). Analyze this 15m chart.
-        Look for: Liquidity Sweeps, MSS, Order Blocks, strong rejection wicks.
-        Output ONLY JSON: {"signal": "LONG", "score": 90, "reason": "Brief reason"}
+        You are an elite Crypto Trader mastering Malaysian SNR, Liquidity, Price Action, ICT, and Fundamentals.
+        Analyze this 15-minute chart.
+        Output ONLY a JSON string:
+        {"signal": "LONG", "score": 90, "reason": "Reason"}
         Score > 85 for signal.
         """
         response = model.generate_content([prompt, img])
         result = json.loads(response.text.strip().replace("```json", "").replace("```", ""))
-        
         sig = result.get("signal", "NEUTRAL")
         score = int(result.get("score", 0))
         reason = result.get("reason", "AI Analysis")
-        
-        # Cleanup AI chart immediately
         os.remove(ai_chart_path)
-        
     except Exception as e:
         if os.path.exists(ai_chart_path): os.remove(ai_chart_path)
         return "NEUTRAL", 0, 0, 0, 0, 0, f"AI Err: {str(e)[:20]}", None
 
     curr_close = df['Close'].iloc[-1]
     atr = (df['High'].iloc[-1] - df['Low'].iloc[-1])
-    # Logical SL placement
     sl = curr_close - (atr * 2.5) if sig == "LONG" else curr_close + (atr * 2.5)
     sl_dist = abs(curr_close - sl) / curr_close * 100
     leverage = int(max(5, min(RISK_PER_TRADE_ROI / sl_dist, 75))) if sl_dist > 0 else 20
@@ -180,15 +182,19 @@ for k, v in saved_data.items():
 
 st.sidebar.title("🎛️ Control Panel")
 current_time = datetime.now(lz)
+is_within_hours = START_HOUR <= current_time.hour < END_HOUR
 
 status_color = "red"; status_text = "STOPPED 🔴"
 if st.session_state.bot_active:
-    if st.session_state.daily_count >= MAX_DAILY_SIGNALS: 
-        status_color = "orange"; status_text = "DAILY LIMIT 🛑"
+    if st.session_state.sent_goodbye:
+        status_color = "orange"; status_text = "DAY ENDED 💤"
+    elif not is_within_hours:
+        status_color = "orange"; status_text = "SLEEPING 💤"
     else:
         status_color = "green"; status_text = "RUNNING 🟢"
 
 st.sidebar.markdown(f"**Status:** :{status_color}[{status_text}]")
+st.sidebar.caption(f"Time: {START_HOUR}:00 - {END_HOUR}:00")
 st.sidebar.metric("Daily Signals", f"{st.session_state.daily_count} / {MAX_DAILY_SIGNALS}")
 
 col1, col2 = st.sidebar.columns(2)
@@ -198,7 +204,7 @@ if col2.button("⏹️ STOP", use_container_width=True): st.session_state.bot_ac
 st.sidebar.markdown("---")
 if st.sidebar.button("⚡ FORCE SCAN NOW", use_container_width=True): st.session_state.force_scan = True; st.rerun()
 if st.sidebar.button("🔄 RESET LIMIT (Admin)", use_container_width=True):
-    st.session_state.daily_count = 0; st.session_state.signaled_coins = []; st.session_state.sent_goodbye = False; save_full_state(); st.rerun()
+    st.session_state.daily_count = 0; st.session_state.signaled_coins = []; st.session_state.sent_goodbye = False; st.session_state.sent_morning = False; save_full_state(); st.rerun()
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("🪙 Coin Manager")
@@ -211,8 +217,8 @@ if st.sidebar.button("🗑️ Remove"):
 
 # --- TEXT ONLY TEST BUTTON ---
 st.sidebar.markdown("---")
-if st.sidebar.button("📡 Test Signal (Text Only)", use_container_width=True):
-    st.sidebar.info("Fetching BTC Data...")
+if st.sidebar.button("📡 Test Signal", use_container_width=True):
+    st.sidebar.info("Simulating Signal...")
     test_df = get_data("BTC")
     if not test_df.empty:
         price = test_df['Close'].iloc[-1]
@@ -221,20 +227,21 @@ if st.sidebar.button("📡 Test Signal (Text Only)", use_container_width=True):
         tps = [price + risk*1, price + risk*2, price + risk*3, price + risk*4]
         lev = 50
         sig_type = "LONG"
-
         send_telegram("", is_sticker=True); time.sleep(1)
         msg = format_vip_message("BTC", sig_type, price, sl, tps, leverage=lev)
-        send_telegram(msg) # Sent as text only
-        st.sidebar.success("Signal Sent (Text Only)!")
+        send_telegram(msg)
+        st.sidebar.success("Signal Sent!")
     else: st.sidebar.error("Failed to fetch BTC")
 
-st.title("👻 GHOST PROTOCOL 5.8 : TEXT ONLY MODE")
+st.title("👻 GHOST PROTOCOL 6.0 : TIME MANAGER")
 st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
 
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
 
 def run_scan():
     if st.session_state.daily_count >= MAX_DAILY_SIGNALS: return
+    if st.session_state.sent_goodbye: return
+
     st.markdown(f"### 👁️ AI Scanning {len(st.session_state.coins)} Coins...")
     progress_bar = st.progress(0); status_area = st.empty()
 
@@ -251,27 +258,59 @@ def run_scan():
             risk = abs(price - sl)
             tps = [price+risk, price+2*risk, price+3*risk, price+4*risk] if sig == "LONG" else [price-risk, price-2*risk, price-3*risk, price-4*risk]
             
-            # Send Sticker
             send_telegram("", is_sticker=True); time.sleep(2)
-            
-            # Send Text Message Only
             msg = format_vip_message(coin, sig, price, sl, tps, leverage)
             send_telegram(msg)
 
             st.session_state.history.insert(0, {"Time": datetime.now(lz).strftime("%H:%M"), "Coin": coin, "Signal": sig})
             st.session_state.daily_count += 1; st.session_state.signaled_coins.append(coin); save_full_state()
-            if st.session_state.daily_count >= MAX_DAILY_SIGNALS: break
+            
+            # --- MSG 2: LIMIT REACHED LOGIC ---
+            if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
+                status_area.info("🛑 Daily Limit Reached! Waiting 15 mins to send Goodbye...")
+                time.sleep(900) # Wait 15 mins
+                send_telegram("🚀 Good Bye Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋")
+                st.session_state.sent_goodbye = True
+                save_full_state()
+                break
         
         time.sleep(3); progress_bar.progress((i + 1) / len(st.session_state.coins))
     st.rerun()
 
 with tab1:
     if st.session_state.bot_active:
-        # 24/7 Run Mode
-        curr_block = current_time.hour * 4 + (current_time.minute // 15)
-        if (curr_block != st.session_state.last_scan_block_id) or st.session_state.force_scan:
-            st.session_state.last_scan_block_id = curr_block; st.session_state.force_scan = False; save_full_state(); run_scan()
-        else: st.info("⏳ AI is watching... Next scan in 15 mins."); time.sleep(10); st.rerun()
+        # 1. MORNING MSG
+        if current_time.hour == START_HOUR and not st.session_state.sent_morning:
+            send_telegram("☀️ Good Morning Traders! ඔයාලා හැමෝටම ජයග්‍රාහී සුබ දවසක් වේවා! 🚀")
+            st.session_state.sent_morning = True
+            save_full_state()
+
+        # 2. NIGHT MSG (TIME UP)
+        if current_time.hour >= END_HOUR:
+            if not st.session_state.sent_goodbye:
+                if st.session_state.daily_count > 0:
+                    # MSG 3
+                    send_telegram("🚀 Good Night Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋")
+                else:
+                    # MSG 4
+                    send_telegram("🧬අද Market එකේ High Probability Setups තිබුනේ නෑ (Choppy Market). 📉\n\nහෙට අලුත් දවසකින් හමුවෙමු! Good Night Traders! 👋")
+                
+                st.session_state.sent_goodbye = True
+                save_full_state()
+            
+            st.warning("💤 AI Sleeping... (Day Ended)")
+            time.sleep(60); st.rerun()
+
+        # 3. NORMAL OPERATION
+        elif is_within_hours:
+            if not st.session_state.sent_goodbye:
+                curr_block = current_time.hour * 4 + (current_time.minute // 15)
+                if (curr_block != st.session_state.last_scan_block_id) or st.session_state.force_scan:
+                    st.session_state.last_scan_block_id = curr_block; st.session_state.force_scan = False; save_full_state(); run_scan()
+                else: st.info("⏳ AI is watching... Next scan in 15 mins."); time.sleep(10); st.rerun()
+            else: st.warning("💤 Day Ended (Limit Reached)."); time.sleep(10); st.rerun()
+        
+        else: st.warning("💤 AI Sleeping... (Waiting for 07:00)"); time.sleep(10); st.rerun()
     else: st.error("⚠️ AI STOPPED")
 
 with tab2:
