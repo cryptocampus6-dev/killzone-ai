@@ -38,7 +38,8 @@ try:
 except Exception as e:
     st.error(f"API Key Error: {e}")
 
-st.set_page_config(page_title="Ghost Protocol AI Vision", page_icon="👁️", layout="wide")
+# --- NAME CHANGED HERE TO FORCE UPDATE ---
+st.set_page_config(page_title="GHOST WORKS NOW ✅", page_icon="👻", layout="wide")
 lz = pytz.timezone('Asia/Colombo')
 
 # --- DATA MANAGEMENT ---
@@ -284,7 +285,8 @@ if st.sidebar.button("📡 Test 5-D Signal + Sticker", use_container_width=True)
     else:
         st.sidebar.error("Failed to fetch Data")
 
-st.title("👻 GHOST PROTOCOL 8.5 : STICKER FIX")
+# --- TITLE CHANGED HERE TO FORCE REFRESH ---
+st.title("👻 GHOST WORKS NOW ✅")
 st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
 
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
