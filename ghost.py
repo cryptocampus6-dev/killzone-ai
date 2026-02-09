@@ -20,7 +20,8 @@ from datetime import datetime
 # ==============================================================================
 GEMINI_API_KEY = "AIzaSyAQhJmvE8VkImSSN-Aiv98nOv_1prfD7QY" 
 TELEGRAM_BOT_TOKEN = "8524773131:AAG7YAYrzt9HYu34UhUJ0af_TDamhyndBas"
-CHANNEL_ID = "-1003731551541"
+CHANNEL_ID = "-1003534299054"
+# Sticker ID එක වැරදි නම් වෙන එකක් දාන්න ඕන. දැනට මේක තියමු.
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWlMq--iOTVBE4BA"
 
 # --- CONFIGURATION ---
@@ -82,16 +83,22 @@ def save_full_state():
     serializable_data = {k: v for k, v in st.session_state.items() if k in ["bot_active", "daily_count", "last_reset_date", "signaled_coins", "history", "last_scan_block_id", "sent_morning", "sent_goodbye", "scan_log", "force_scan", "coins"]}
     with open(DATA_FILE, "w") as f: json.dump(serializable_data, f)
 
-# --- TELEGRAM ---
+# --- TELEGRAM (FIXED WITH ERROR CHECKING) ---
 def send_telegram(msg, is_sticker=False):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/"
     try:
         if is_sticker:
-            requests.post(url + "sendSticker", data={"chat_id": CHANNEL_ID, "sticker": STICKER_ID})
+            r = requests.post(url + "sendSticker", data={"chat_id": CHANNEL_ID, "sticker": STICKER_ID})
         else:
-            requests.post(url + "sendMessage", data={"chat_id": CHANNEL_ID, "text": msg, "parse_mode": "HTML"})
+            r = requests.post(url + "sendMessage", data={"chat_id": CHANNEL_ID, "text": msg, "parse_mode": "HTML"})
+        
+        # Check for errors
+        if r.status_code != 200:
+            st.error(f"⚠️ Telegram Error: {r.text}")
+            print(f"Telegram Failed: {r.text}")
+
     except Exception as e:
-        print(f"Telegram Error: {e}")
+        st.error(f"⚠️ Connection Error: {e}")
 
 # --- DATA FETCHING ---
 def get_data(symbol):
@@ -265,8 +272,14 @@ if st.sidebar.button("🗑️ Remove"):
     if rem_coin in st.session_state.coins: st.session_state.coins.remove(rem_coin); save_full_state(); st.rerun()
 
 st.sidebar.markdown("---")
-if st.sidebar.button("📡 Test 5-D Signal", use_container_width=True):
-    st.sidebar.info("Simulating...")
+if st.sidebar.button("📡 Test 5-D Signal + Sticker", use_container_width=True):
+    st.sidebar.info("Sending Sticker & Signal...")
+    
+    # 1. Try sending sticker first
+    send_telegram("", is_sticker=True)
+    time.sleep(1)
+    
+    # 2. Then send message
     test_df = get_data("BTC")
     if not test_df.empty:
         price = test_df['Close'].iloc[-1]
@@ -274,9 +287,11 @@ if st.sidebar.button("📡 Test 5-D Signal", use_container_width=True):
         tps = [price+risk*1.5, price+risk*3, price+risk*5, price+risk*8]
         msg = format_vip_message("BTC", "LONG", price, sl, tps, 50)
         send_telegram(msg)
-        st.sidebar.success("Sent!")
+        st.sidebar.success("Process Complete. Check Telegram!")
+    else:
+        st.sidebar.error("Failed to fetch Data")
 
-st.title("👻 GHOST PROTOCOL 8.4 : VISUAL FEEDBACK")
+st.title("👻 GHOST PROTOCOL 8.5 : STICKER FIX")
 st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
 
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
@@ -296,17 +311,17 @@ def run_scan():
 
         sig, score, price, leverage, sl, _, reason, _ = analyze_with_vision(df, coin)
         
-        # --- SHOW STATUS ON SCREEN ---
         if sig != "NEUTRAL":
             status_area.markdown(f"🚀 **SIGNAL FOUND:** `{coin}` | Score: **{score}%**")
-        else:
-            status_area.markdown(f"👀 **Scanned:** `{coin}` | Result: {sig} ({score}%)")
-        
-        if sig != "NEUTRAL":
+            
+            # 1. Send Sticker
+            send_telegram("", is_sticker=True)
+            time.sleep(2)
+            
+            # 2. Send Message
             risk = abs(price - sl)
             tps = [price+risk*1.5, price+risk*3, price+risk*5, price+risk*8] if sig == "LONG" else [price-risk*1.5, price-risk*3, price-risk*5, price-risk*8]
             
-            send_telegram("", is_sticker=True); time.sleep(2)
             msg = format_vip_message(coin, sig, price, sl, tps, leverage)
             send_telegram(msg)
 
@@ -318,8 +333,9 @@ def run_scan():
                 time.sleep(900) 
                 send_telegram("🚀 Good Bye Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋")
                 st.session_state.sent_goodbye = True; save_full_state(); break
+        else:
+            status_area.markdown(f"👀 **Scanned:** `{coin}` | Result: {sig} ({score}%)")
         
-        # Small delay to let user see the status
         time.sleep(1); progress_bar.progress((i + 1) / len(st.session_state.coins))
     st.rerun()
 
