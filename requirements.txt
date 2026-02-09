@@ -1,13 +1,9 @@
 streamlit
-ccxt
 pandas
 pandas_ta
-plotly
-numpy
-requests
-cryptography
-pytz
 yfinance
-google-generativeai
 mplfinance
 matplotlib
+google-generativeai
+requests
+pytz
