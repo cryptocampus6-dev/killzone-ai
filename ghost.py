@@ -147,45 +147,38 @@ def analyze_with_vision(df, coin_name):
 
     try:
         img = genai.upload_file(ai_chart_path)
+        # --- NEW SCORING PROMPT ---
         prompt = """
-        You are the "Crypto Campus AI" executing the '5-D Fusion' Strategy (Limit Order Setup).
-        Analyze this 15-minute chart strictly according to these 7 STEPS:
+        You are the "Crypto Campus AI" executing the '5-D Fusion' Strategy.
+        Analyze the chart and CALCULATE A SCORE based on these steps:
 
-        Step 1: Fundamentals & Sentiment
-        - Check for extreme volatility candles (News impact). If chaotic, SKIP.
-
-        Step 2: HTF & Malaysian SNR (The Map)
-        - Trend: UP or DOWN?
-        - Locate fresh Malaysian SNR (Support/RBS).
-        - Look for Liquidity Pools (SSL/BSL) near the SNR.
+        SCORING CRITERIA (Total 100%):
         
-        Step 3: The Trigger (ICT Time & Sweep)
-        - Look for a Liquidity Sweep (Wick grab) of the SSL/BSL.
-        - This is the "Fakeout". Did price grab liquidity and immediately reverse?
+        1. MARKET STRUCTURE (Max 20 pts):
+           - Is there a clear Trend + Malaysian SNR level? 
+           - If YES: +20 points.
 
-        Step 4: Confirmation (QML + MSS)
-        - Did price displace (MSS) after the sweep?
-        - Is there a QML pattern (Low -> High -> Lower Low -> Higher High)?
+        2. LIQUIDITY SWEEP (Max 30 pts):
+           - Did price sweep a Liquidity Pool (Wick grab)?
+           - This is the most important trigger.
+           - If YES: +30 points.
 
-        Step 5: THE SNIPER EXECUTION (Golden Rule)
-        - Identify the ICT FVG caused by the MSS.
-        - Identify the Malaysian MPL (Quasimodo Left Shoulder Engulfing/Doji) inside that FVG.
-        - CRITICAL: Use a LIMIT ORDER mentality. The entry must be at this MPL/FVG intersection.
+        3. CONFIRMATION - MSS/QML (Max 20 pts):
+           - After the sweep, did price displace (MSS)?
+           - Is there a QML pattern?
+           - If YES: +20 points.
 
-        Step 6: Risk Management
-        - Stop Loss must be TIGHT (just below the Sweep Wick).
+        4. THE SNIPER ENTRY (Max 30 pts):
+           - Is there a clear FVG + MPL (Engulfing/Doji) intersection for a Limit Order?
+           - If YES: +30 points.
 
-        Step 7: Targets
-        - TP1: Internal Liquidity.
-        - TP2: H4 Resistance.
-        - TP3: Swing High.
-        - TP4: Moonbag.
-
-        OUTPUT DECISION:
-        Output ONLY a JSON string:
-        {"signal": "LONG", "score": 90, "reason": "Liquidity Sweep + QML + MPL Limit Entry"}
+        INSTRUCTIONS:
+        - Sum up the points.
+        - If Total Score >= 85: Signal is LONG or SHORT.
+        - If Total Score < 85: Signal is NEUTRAL, BUT output the calculated score (e.g., 40, 50, 70).
         
-        Score > 85 ONLY if the Step 5 (FVG + MPL Intersection) is clearly visible for a Limit Order.
+        OUTPUT FORMAT (JSON ONLY):
+        {"signal": "LONG/SHORT/NEUTRAL", "score": total_score, "reason": "Sweep detected but no MSS"}
         """
         response = model.generate_content([prompt, img])
         result = json.loads(response.text.strip().replace("```json", "").replace("```", ""))
@@ -334,7 +327,8 @@ def run_scan():
                 send_telegram("🚀 Good Bye Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋")
                 st.session_state.sent_goodbye = True; save_full_state(); break
         else:
-            status_area.markdown(f"👀 **Scanned:** `{coin}` | Result: {sig} ({score}%)")
+            # --- UPDATED DISPLAY LINE ---
+            status_area.markdown(f"👀 **Scanned:** `{coin}` | Result: {sig} ({score}%) | 📝 {reason}")
         
         time.sleep(1); progress_bar.progress((i + 1) / len(st.session_state.coins))
     st.rerun()
