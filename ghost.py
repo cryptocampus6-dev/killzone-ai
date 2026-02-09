@@ -135,7 +135,7 @@ def generate_ai_chart(df, coin_name):
         return filename
     except: return None
 
-# --- AI ANALYSIS (5-D FUSION LOGIC - EXACT MATCH) ---
+# --- AI ANALYSIS (5-D FUSION LOGIC) ---
 def analyze_with_vision(df, coin_name):
     ai_chart_path = generate_ai_chart(df, coin_name)
     if not ai_chart_path: return "NEUTRAL", 0, 0, 0, 0, 0, "Chart Error", None
@@ -143,7 +143,7 @@ def analyze_with_vision(df, coin_name):
     try:
         img = genai.upload_file(ai_chart_path)
         
-        # --- THE MASTER PROMPT (USER'S EXACT STRATEGY) ---
+        # --- THE MASTER PROMPT (5-D FUSION) ---
         prompt = """
         You are the "Crypto Campus AI" executing the '5-D Fusion' Strategy (Limit Order Setup).
         Analyze this 15-minute chart strictly according to these 7 STEPS:
@@ -197,15 +197,13 @@ def analyze_with_vision(df, coin_name):
 
     curr_close = df['Close'].iloc[-1]
     atr = (df['High'].iloc[-1] - df['Low'].iloc[-1])
-    
-    # SL Logic: Tight SL below Sweep
     sl = curr_close - (atr * 1.5) if sig == "LONG" else curr_close + (atr * 1.5)
     sl_dist = abs(curr_close - sl) / curr_close * 100
     leverage = int(max(5, min(RISK_PER_TRADE_ROI / sl_dist, 75))) if sl_dist > 0 else 20
 
     return (sig if score > 85 else "NEUTRAL"), score, curr_close, leverage, sl, 0, reason, None
 
-# --- FORMATTING FUNCTION (EXACT 5-D FUSION SPECS) ---
+# --- FORMATTING FUNCTION (UPDATED) ---
 def format_vip_message(coin, sig, price, sl, tps, leverage):
     p_fmt = ".4f" if price < 50 else ".2f"
     
@@ -232,7 +230,7 @@ def format_vip_message(coin, sig, price, sl, tps, leverage):
         f"4️⃣ {tps[3]:{p_fmt}} ({roi_4}%) - <i>Moonbag (Hold 10%)</i>\n\n"
         f"⭕ <b>Stop Loss {sl:{p_fmt}} ({sl_roi}%)</b>\n\n"
         f"📝 <b>RR 1:{rr}</b>\n\n"
-        f"⚠️ <b>Risk: 1-2% (Sniper Entry)</b>"
+        f"⚠️ <b>Margin Use 1%-5%(Trading Plan Use)</b>"
     )
     return msg
 
@@ -294,7 +292,7 @@ if st.sidebar.button("📡 Test 5-D Signal (Text Only)", use_container_width=Tru
         st.sidebar.success("Signal Sent!")
     else: st.sidebar.error("Failed to fetch BTC")
 
-st.title("👻 GHOST PROTOCOL 8.1 : THE PERFECT 5-D")
+st.title("👻 GHOST PROTOCOL 8.3 : PERFECT 5-D")
 st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
 
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
