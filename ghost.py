@@ -42,7 +42,6 @@ lz = pytz.timezone('Asia/Colombo')
 
 # --- DATA MANAGEMENT ---
 def load_data():
-    # --- 120 COINS LIST ---
     default_coins = [
         "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "LTC", 
         "DOT", "MATIC", "UNI", "BCH", "FIL", "NEAR", "ATOM", "ICP", "IMX", "APT",
@@ -83,7 +82,7 @@ def save_full_state():
     serializable_data = {k: v for k, v in st.session_state.items() if k in ["bot_active", "daily_count", "last_reset_date", "signaled_coins", "history", "last_scan_block_id", "sent_morning", "sent_goodbye", "scan_log", "force_scan", "coins"]}
     with open(DATA_FILE, "w") as f: json.dump(serializable_data, f)
 
-# --- TELEGRAM (TEXT ONLY) ---
+# --- TELEGRAM ---
 def send_telegram(msg, is_sticker=False):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/"
     try:
@@ -122,7 +121,7 @@ def get_data(symbol):
         return pd.DataFrame()
 
 # ==============================================================================
-# 🧠 AI CHART (INTERNAL) & 5-D PROMPT
+# 🧠 AI CHART & 5-D PROMPT
 # ==============================================================================
 
 def generate_ai_chart(df, coin_name):
@@ -135,15 +134,12 @@ def generate_ai_chart(df, coin_name):
         return filename
     except: return None
 
-# --- AI ANALYSIS (5-D FUSION LOGIC) ---
 def analyze_with_vision(df, coin_name):
     ai_chart_path = generate_ai_chart(df, coin_name)
     if not ai_chart_path: return "NEUTRAL", 0, 0, 0, 0, 0, "Chart Error", None
 
     try:
         img = genai.upload_file(ai_chart_path)
-        
-        # --- THE MASTER PROMPT (5-D FUSION) ---
         prompt = """
         You are the "Crypto Campus AI" executing the '5-D Fusion' Strategy (Limit Order Setup).
         Analyze this 15-minute chart strictly according to these 7 STEPS:
@@ -184,7 +180,6 @@ def analyze_with_vision(df, coin_name):
         
         Score > 85 ONLY if the Step 5 (FVG + MPL Intersection) is clearly visible for a Limit Order.
         """
-        
         response = model.generate_content([prompt, img])
         result = json.loads(response.text.strip().replace("```json", "").replace("```", ""))
         sig = result.get("signal", "NEUTRAL")
@@ -203,10 +198,8 @@ def analyze_with_vision(df, coin_name):
 
     return (sig if score > 85 else "NEUTRAL"), score, curr_close, leverage, sl, 0, reason, None
 
-# --- FORMATTING FUNCTION (UPDATED) ---
 def format_vip_message(coin, sig, price, sl, tps, leverage):
     p_fmt = ".4f" if price < 50 else ".2f"
-    
     roi_1 = round(abs(tps[0]-price)/price*100*leverage, 1)
     roi_2 = round(abs(tps[1]-price)/price*100*leverage, 1)
     roi_3 = round(abs(tps[2]-price)/price*100*leverage, 1)
@@ -252,7 +245,6 @@ if st.session_state.bot_active:
     else: status_color = "green"; status_text = "RUNNING 🟢"
 
 st.sidebar.markdown(f"**Status:** :{status_color}[{status_text}]")
-st.sidebar.caption(f"Time: {START_HOUR}:00 - {END_HOUR}:00")
 st.sidebar.metric("Daily Signals", f"{st.session_state.daily_count} / {MAX_DAILY_SIGNALS}")
 
 col1, col2 = st.sidebar.columns(2)
@@ -264,7 +256,6 @@ if st.sidebar.button("⚡ FORCE SCAN NOW", use_container_width=True): st.session
 if st.sidebar.button("🔄 RESET LIMIT (Admin)", use_container_width=True):
     st.session_state.daily_count = 0; st.session_state.signaled_coins = []; st.session_state.sent_goodbye = False; st.session_state.sent_morning = False; save_full_state(); st.rerun()
 
-st.sidebar.markdown("---")
 st.sidebar.subheader("🪙 Coin Manager (120 Coins)")
 new_coin = st.sidebar.text_input("Add Coin", "").upper()
 if st.sidebar.button("➕ Add Coin"):
@@ -273,26 +264,19 @@ rem_coin = st.sidebar.selectbox("Remove Coin", st.session_state.coins)
 if st.sidebar.button("🗑️ Remove"):
     if rem_coin in st.session_state.coins: st.session_state.coins.remove(rem_coin); save_full_state(); st.rerun()
 
-# --- 5-D TEST BUTTON ---
 st.sidebar.markdown("---")
-if st.sidebar.button("📡 Test 5-D Signal (Text Only)", use_container_width=True):
-    st.sidebar.info("Simulating 5-D Setup...")
+if st.sidebar.button("📡 Test 5-D Signal", use_container_width=True):
+    st.sidebar.info("Simulating...")
     test_df = get_data("BTC")
     if not test_df.empty:
         price = test_df['Close'].iloc[-1]
-        sl = price * 0.995 
-        risk = abs(price - sl)
-        tps = [price + risk*1.5, price + risk*3, price + risk*5, price + risk*8]
-        lev = 50
-        sig_type = "LONG"
-
-        send_telegram("", is_sticker=True); time.sleep(1)
-        msg = format_vip_message("BTC", sig_type, price, sl, tps, leverage=lev)
+        sl = price * 0.995; risk = abs(price - sl)
+        tps = [price+risk*1.5, price+risk*3, price+risk*5, price+risk*8]
+        msg = format_vip_message("BTC", "LONG", price, sl, tps, 50)
         send_telegram(msg)
-        st.sidebar.success("Signal Sent!")
-    else: st.sidebar.error("Failed to fetch BTC")
+        st.sidebar.success("Sent!")
 
-st.title("👻 GHOST PROTOCOL 8.3 : PERFECT 5-D")
+st.title("👻 GHOST PROTOCOL 8.4 : VISUAL FEEDBACK")
 st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
 
 tab1, tab2 = st.tabs(["📊 Live Scanner", "📜 Signal History"])
@@ -312,8 +296,13 @@ def run_scan():
 
         sig, score, price, leverage, sl, _, reason, _ = analyze_with_vision(df, coin)
         
+        # --- SHOW STATUS ON SCREEN ---
         if sig != "NEUTRAL":
-            status_area.markdown(f"🎯 **Signal Found!** Sending Alert for {coin}...")
+            status_area.markdown(f"🚀 **SIGNAL FOUND:** `{coin}` | Score: **{score}%**")
+        else:
+            status_area.markdown(f"👀 **Scanned:** `{coin}` | Result: {sig} ({score}%)")
+        
+        if sig != "NEUTRAL":
             risk = abs(price - sl)
             tps = [price+risk*1.5, price+risk*3, price+risk*5, price+risk*8] if sig == "LONG" else [price-risk*1.5, price-risk*3, price-risk*5, price-risk*8]
             
@@ -328,11 +317,10 @@ def run_scan():
                 status_area.info("🛑 Daily Limit Reached! Waiting 15 mins to send Goodbye...")
                 time.sleep(900) 
                 send_telegram("🚀 Good Bye Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋")
-                st.session_state.sent_goodbye = True
-                save_full_state()
-                break
+                st.session_state.sent_goodbye = True; save_full_state(); break
         
-        time.sleep(3); progress_bar.progress((i + 1) / len(st.session_state.coins))
+        # Small delay to let user see the status
+        time.sleep(1); progress_bar.progress((i + 1) / len(st.session_state.coins))
     st.rerun()
 
 with tab1:
