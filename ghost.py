@@ -1,22 +1,12 @@
 import streamlit as st
-import os
-
-# ==============================================================================
-# 🛠️ FORCE UPDATE (THE FIX FOR 404 ERROR)
-# ==============================================================================
-# මෙය මගින් Streamlit එකට බල කරනවා අලුත්ම Gemini Version එක දාගන්න කියලා
-os.system("pip install -U google-generativeai")
-
-# දැන් අනිත් Library ටික Import කරමු
 import pandas as pd
 import pandas_ta as ta
 import time
 import requests
 import pytz
+import os
 import json
 import yfinance as yf
-
-# --- MATPLOTLIB FOR INTERNAL AI VISION ONLY ---
 import matplotlib
 matplotlib.use('Agg')
 import mplfinance as mpf
@@ -26,8 +16,12 @@ from datetime import datetime
 # ==============================================================================
 # 🔐 USER SETTINGS
 # ==============================================================================
-# ඔයාගේ අලුත්ම Key එක Secrets වලින් ගමු
-GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+try:
+    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+except:
+    st.error("API Key not found in Secrets! Please add it.")
+    st.stop()
+
 TELEGRAM_BOT_TOKEN = "8524773131:AAG7YAYrzt9HYu34UhUJ0af_TDamhyndBas"
 CHANNEL_ID = "-1003731551541"
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWlMq--iOTVBE4BA"
@@ -42,10 +36,10 @@ RISK_PER_TRADE_ROI = 60
 # Setup Gemini AI
 try:
     genai.configure(api_key=GEMINI_API_KEY)
-    # ඔයා Pro ගත්ත නිසා අපි හොඳම එකම පාවිච්චි කරමු
-    model = genai.GenerativeModel('gemini-1.5-pro')
+    # අපි මුලින්ම Flash දාලා බලමු, මේක වැඩ කරාට පස්සේ Pro දාමු.
+    model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
-    st.error(f"API Key Error: {e}")
+    st.error(f"Gemini Setup Error: {e}")
 
 st.set_page_config(page_title="GHOST WORKS NOW ✅", page_icon="👻", layout="wide")
 lz = pytz.timezone('Asia/Colombo')
