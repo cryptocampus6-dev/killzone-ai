@@ -41,7 +41,8 @@ RISK_PER_TRADE_ROI = 60
 try:
     genai.configure(api_key=GEMINI_API_KEY)
     # Python 3.13 සඳහා Flash මොඩල් එක පාවිච්චි කරමු
-    model = genai.GenerativeModel('gemini-1.5-flash')
+   # Model නම හරියටම පද්ධතියට ගැලපෙන විදියට වෙනස් කරමු
+    model = genai.GenerativeModel('models/gemini-1.5-flash')
 except Exception as e:
     st.error(f"Gemini Connect Error: {e}")
 
