@@ -1,10 +1,18 @@
 import streamlit as st
+import os
+
+# ==============================================================================
+# 🛠️ FORCE UPDATE (THE FIX FOR 404 ERROR)
+# ==============================================================================
+# මෙය මගින් Streamlit එකට බල කරනවා අලුත්ම Gemini Version එක දාගන්න කියලා
+os.system("pip install -U google-generativeai")
+
+# දැන් අනිත් Library ටික Import කරමු
 import pandas as pd
 import pandas_ta as ta
 import time
 import requests
 import pytz
-import os
 import json
 import yfinance as yf
 
@@ -18,7 +26,7 @@ from datetime import datetime
 # ==============================================================================
 # 🔐 USER SETTINGS
 # ==============================================================================
-# ඔයාගේ අලුත්ම Key එක මෙතනට දැම්මා
+# ඔයාගේ අලුත්ම Key එක Secrets වලින් ගමු
 GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 TELEGRAM_BOT_TOKEN = "8524773131:AAG7YAYrzt9HYu34UhUJ0af_TDamhyndBas"
 CHANNEL_ID = "-1003731551541"
