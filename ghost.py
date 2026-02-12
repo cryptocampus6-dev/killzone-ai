@@ -7,6 +7,8 @@ import pytz
 import os
 import json
 import yfinance as yf
+
+# --- MATPLOTLIB FOR INTERNAL AI VISION ONLY ---
 import matplotlib
 matplotlib.use('Agg')
 import mplfinance as mpf
@@ -16,19 +18,14 @@ from datetime import datetime
 # ==============================================================================
 # 🔐 USER SETTINGS
 # ==============================================================================
-try:
-    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-except:
-    st.error("API Key not found! Please check Secrets.")
-    st.stop()
-
+GEMINI_API_KEY = "AIzaSyAQhJmvE8VkImSSN-Aiv98nOv_1prfD7QY" 
 TELEGRAM_BOT_TOKEN = "8524773131:AAG7YAYrzt9HYu34UhUJ0af_TDamhyndBas"
 CHANNEL_ID = "-1003731551541"
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWlMq--iOTVBE4BA"
 
 # --- CONFIGURATION ---
-START_HOUR = 7   
-END_HOUR = 21    
+START_HOUR = 7   # 07:00 AM
+END_HOUR = 21    # 09:00 PM
 MAX_DAILY_SIGNALS = 8
 DATA_FILE = "bot_data.json"
 RISK_PER_TRADE_ROI = 60 
@@ -36,13 +33,18 @@ RISK_PER_TRADE_ROI = 60
 # Setup Gemini AI
 try:
     genai.configure(api_key=GEMINI_API_KEY)
-    # Python 3.13 සඳහා අපි Flash මොඩල් එක පාවිච්චි කරමු
     model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
-    st.error(f"Gemini Setup Error: {e}")
+    st.error(f"API Key Error: {e}")
 
-st.set_page_config(page_title="GHOST WORKS NOW ✅", page_icon="👻", layout="wide")
+st.set_page_config(page_title="GHOST DEBUG MODE 🛠️", page_icon="👻", layout="wide")
 lz = pytz.timezone('Asia/Colombo')
+
+# --- DEBUGGING LINE (මේකෙන් වර්ෂන් එක බලාගන්න පුළුවන්) ---
+try:
+    st.error(f"🛠️ SYSTEM CHECK: google-generativeai version = {genai.__version__}")
+except:
+    st.error("🛠️ SYSTEM CHECK: Version Unknown")
 
 # --- DATA MANAGEMENT ---
 def load_data():
@@ -95,9 +97,9 @@ def send_telegram(msg, is_sticker=False):
         else:
             r = requests.post(url + "sendMessage", data={"chat_id": CHANNEL_ID, "text": msg, "parse_mode": "HTML"})
         if r.status_code != 200:
-            print(f"Telegram Failed: {r.text}")
+            st.error(f"⚠️ Telegram Error: {r.text}")
     except Exception as e:
-        print(f"Telegram Error: {e}")
+        st.error(f"⚠️ Connection Error: {e}")
 
 # --- DATA FETCHING ---
 def get_data(symbol):
@@ -186,7 +188,8 @@ def analyze_with_vision(df, coin_name):
         os.remove(ai_chart_path)
     except Exception as e:
         if os.path.exists(ai_chart_path): os.remove(ai_chart_path)
-        return "NEUTRAL", 0, 0, 0, 0, 0, f"AI Err: {str(e)[:50]}", None
+        # --- SHOW FULL ERROR FOR DEBUGGING ---
+        return "NEUTRAL", 0, 0, 0, 0, 0, f"AI Err: {str(e)}", None
 
     curr_close = df['Close'].iloc[-1]
     atr = (df['High'].iloc[-1] - df['Low'].iloc[-1])
