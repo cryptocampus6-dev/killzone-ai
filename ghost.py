@@ -19,7 +19,7 @@ from datetime import datetime
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 except:
-    st.error("API Key not found in Secrets!")
+    st.error("API Key not found! Please check Secrets.")
     st.stop()
 
 TELEGRAM_BOT_TOKEN = "8524773131:AAG7YAYrzt9HYu34UhUJ0af_TDamhyndBas"
@@ -36,7 +36,7 @@ RISK_PER_TRADE_ROI = 60
 # Setup Gemini AI
 try:
     genai.configure(api_key=GEMINI_API_KEY)
-    # අපි Flash මොඩල් එක පාවිච්චි කරමු (මේක අනිවාර්යයෙන්ම වැඩ)
+    # 3.13 වලට Flash මොඩල් එක ආරක්ෂිතයි
     model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
     st.error(f"Gemini Setup Error: {e}")
