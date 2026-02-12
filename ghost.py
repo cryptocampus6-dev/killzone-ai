@@ -36,7 +36,7 @@ RISK_PER_TRADE_ROI = 60
 # Setup Gemini AI
 try:
     genai.configure(api_key=GEMINI_API_KEY)
-    # 3.13 වලට Flash මොඩල් එක ආරක්ෂිතයි
+    # Python 3.13 සඳහා අපි Flash මොඩල් එක පාවිච්චි කරමු
     model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
     st.error(f"Gemini Setup Error: {e}")
