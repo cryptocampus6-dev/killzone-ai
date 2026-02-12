@@ -1,4 +1,18 @@
+import sys
+import subprocess
+
+# ==========================================================
+# 🚀 FORCE UPDATE: බලෙන්ම අලුත් Gemini Library එක දාගැනීම
+# ==========================================================
+try:
+    # මේකෙන් අපි මැෂින් එකට අන දෙනවා අලුත්ම එක Install කරන්න කියලා
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "google-generativeai"])
+except Exception as e:
+    print(f"Update Error: {e}")
+
+# දැන් අනිත් Library ටික Import කරමු
 import streamlit as st
+import google.generativeai as genai
 import pandas as pd
 import pandas_ta as ta
 import time
@@ -10,7 +24,6 @@ import yfinance as yf
 import matplotlib
 matplotlib.use('Agg')
 import mplfinance as mpf
-import google.generativeai as genai
 from datetime import datetime
 
 # ==============================================================================
@@ -19,8 +32,10 @@ from datetime import datetime
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 except:
-    st.error("API Key not found in Secrets! Please add it.")
+    st.error("API Key not found! Please check Secrets.")
     st.stop()
+
+# ... (ඔයාගේ ඉතුරු කෝඩ් එක මෙතනින් පහළට එහෙමම තියන්න)
 
 TELEGRAM_BOT_TOKEN = "8524773131:AAG7YAYrzt9HYu34UhUJ0af_TDamhyndBas"
 CHANNEL_ID = "-1003731551541"
