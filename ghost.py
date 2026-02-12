@@ -21,7 +21,6 @@ from datetime import datetime
 GEMINI_API_KEY = "AIzaSyAQhJmvE8VkImSSN-Aiv98nOv_1prfD7QY" 
 TELEGRAM_BOT_TOKEN = "8524773131:AAG7YAYrzt9HYu34UhUJ0af_TDamhyndBas"
 CHANNEL_ID = "-1003731551541"
-# Sticker ID එක වැරදි නම් වෙන එකක් දාන්න ඕන. දැනට මේක තියමු.
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWlMq--iOTVBE4BA"
 
 # --- CONFIGURATION ---
@@ -38,9 +37,14 @@ try:
 except Exception as e:
     st.error(f"API Key Error: {e}")
 
-# --- NAME CHANGED HERE TO FORCE UPDATE ---
-st.set_page_config(page_title="GHOST WORKS NOW ✅", page_icon="👻", layout="wide")
+st.set_page_config(page_title="GHOST DEBUG MODE 🛠️", page_icon="👻", layout="wide")
 lz = pytz.timezone('Asia/Colombo')
+
+# --- DEBUGGING LINE (මේකෙන් වර්ෂන් එක බලාගන්න පුළුවන්) ---
+try:
+    st.error(f"🛠️ SYSTEM CHECK: google-generativeai version = {genai.__version__}")
+except:
+    st.error("🛠️ SYSTEM CHECK: Version Unknown")
 
 # --- DATA MANAGEMENT ---
 def load_data():
@@ -84,7 +88,7 @@ def save_full_state():
     serializable_data = {k: v for k, v in st.session_state.items() if k in ["bot_active", "daily_count", "last_reset_date", "signaled_coins", "history", "last_scan_block_id", "sent_morning", "sent_goodbye", "scan_log", "force_scan", "coins"]}
     with open(DATA_FILE, "w") as f: json.dump(serializable_data, f)
 
-# --- TELEGRAM (FIXED WITH ERROR CHECKING) ---
+# --- TELEGRAM ---
 def send_telegram(msg, is_sticker=False):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/"
     try:
@@ -92,12 +96,8 @@ def send_telegram(msg, is_sticker=False):
             r = requests.post(url + "sendSticker", data={"chat_id": CHANNEL_ID, "sticker": STICKER_ID})
         else:
             r = requests.post(url + "sendMessage", data={"chat_id": CHANNEL_ID, "text": msg, "parse_mode": "HTML"})
-        
-        # Check for errors
         if r.status_code != 200:
             st.error(f"⚠️ Telegram Error: {r.text}")
-            print(f"Telegram Failed: {r.text}")
-
     except Exception as e:
         st.error(f"⚠️ Connection Error: {e}")
 
@@ -148,7 +148,6 @@ def analyze_with_vision(df, coin_name):
 
     try:
         img = genai.upload_file(ai_chart_path)
-        # --- NEW SCORING PROMPT ---
         prompt = """
         You are the "Crypto Campus AI" executing the '5-D Fusion' Strategy.
         Analyze the chart and CALCULATE A SCORE based on these steps:
@@ -189,7 +188,8 @@ def analyze_with_vision(df, coin_name):
         os.remove(ai_chart_path)
     except Exception as e:
         if os.path.exists(ai_chart_path): os.remove(ai_chart_path)
-        return "NEUTRAL", 0, 0, 0, 0, 0, f"AI Err: {str(e)[:20]}", None
+        # --- SHOW FULL ERROR FOR DEBUGGING ---
+        return "NEUTRAL", 0, 0, 0, 0, 0, f"AI Err: {str(e)}", None
 
     curr_close = df['Close'].iloc[-1]
     atr = (df['High'].iloc[-1] - df['Low'].iloc[-1])
@@ -268,12 +268,8 @@ if st.sidebar.button("🗑️ Remove"):
 st.sidebar.markdown("---")
 if st.sidebar.button("📡 Test 5-D Signal + Sticker", use_container_width=True):
     st.sidebar.info("Sending Sticker & Signal...")
-    
-    # 1. Try sending sticker first
     send_telegram("", is_sticker=True)
     time.sleep(1)
-    
-    # 2. Then send message
     test_df = get_data("BTC")
     if not test_df.empty:
         price = test_df['Close'].iloc[-1]
@@ -285,7 +281,6 @@ if st.sidebar.button("📡 Test 5-D Signal + Sticker", use_container_width=True)
     else:
         st.sidebar.error("Failed to fetch Data")
 
-# --- TITLE CHANGED HERE TO FORCE REFRESH ---
 st.title("👻 GHOST WORKS NOW ✅")
 st.metric("🇱🇰 Sri Lanka Time", current_time.strftime("%H:%M:%S"))
 
@@ -308,28 +303,20 @@ def run_scan():
         
         if sig != "NEUTRAL":
             status_area.markdown(f"🚀 **SIGNAL FOUND:** `{coin}` | Score: **{score}%**")
-            
-            # 1. Send Sticker
             send_telegram("", is_sticker=True)
             time.sleep(2)
-            
-            # 2. Send Message
             risk = abs(price - sl)
             tps = [price+risk*1.5, price+risk*3, price+risk*5, price+risk*8] if sig == "LONG" else [price-risk*1.5, price-risk*3, price-risk*5, price-risk*8]
-            
             msg = format_vip_message(coin, sig, price, sl, tps, leverage)
             send_telegram(msg)
-
             st.session_state.history.insert(0, {"Time": datetime.now(lz).strftime("%H:%M"), "Coin": coin, "Signal": sig})
             st.session_state.daily_count += 1; st.session_state.signaled_coins.append(coin); save_full_state()
-            
             if st.session_state.daily_count >= MAX_DAILY_SIGNALS:
                 status_area.info("🛑 Daily Limit Reached! Waiting 15 mins to send Goodbye...")
                 time.sleep(900) 
                 send_telegram("🚀 Good Bye Traders! අදට Signals දීලා ඉවරයි. අපි ආයිත් හෙට දවසේ සුපිරි Entries ටිකක් ගමු! 👋")
                 st.session_state.sent_goodbye = True; save_full_state(); break
         else:
-            # --- UPDATED DISPLAY LINE ---
             status_area.markdown(f"👀 **Scanned:** `{coin}` | Result: {sig} ({score}%) | 📝 {reason}")
         
         time.sleep(1); progress_bar.progress((i + 1) / len(st.session_state.coins))
