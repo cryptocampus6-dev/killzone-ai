@@ -1,54 +1,16 @@
 import streamlit as st
-import sys
-import subprocess
-import os
-
-# ==============================================================================
-# 🧨 THE NUCLEAR FIX: DYNAMIC MEMORY RELOAD
-# ==============================================================================
-# මේ Function එකෙන් පරණ Library එක මෙමරි එකෙන් මකලා අලුත් එක දානවා
-def install_and_load_gemini():
-    try:
-        import google.generativeai as genai
-        # Version එක පරීක්ෂා කරමු. 0.7.0 ට අඩු නම් Error එකක් ගමු
-        version = genai.__version__
-        if int(version.split('.')[1]) < 7:
-            raise ImportError
-        return genai
-    except (ImportError, AttributeError, IndexError):
-        placeholder = st.empty()
-        placeholder.warning("⚠️ Updating AI Brain... Please wait 30 seconds...")
-        
-        # 1. Force Install
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "google-generativeai>=0.7.0"])
-        
-        # 2. CLEAR MEMORY CACHE (මේක තමයි රහස!)
-        if "google.generativeai" in sys.modules:
-            del sys.modules["google.generativeai"]
-        if "google" in sys.modules:
-            del sys.modules["google"]
-            
-        # 3. Re-Import
-        import google.generativeai as genai
-        placeholder.success("✅ AI Brain Updated! Restarting...")
-        time.sleep(2)
-        placeholder.empty()
-        return genai
-
-# අනිත් Library Import කරන්න කලින් AI එක ලෝඩ් කරමු
-import time # Time ඕන වෙනවා උඩ function එකට
-genai = install_and_load_gemini()
-
-# දැන් අනිත් සාමාන්‍ය Imports
 import pandas as pd
 import pandas_ta as ta
+import time
 import requests
 import pytz
+import os
 import json
 import yfinance as yf
 import matplotlib
 matplotlib.use('Agg')
 import mplfinance as mpf
+import google.generativeai as genai
 from datetime import datetime
 
 # ==============================================================================
@@ -60,17 +22,13 @@ except:
     st.error("API Key not found in Secrets!")
     st.stop()
 
-# ... (ඔයාගේ ඉතුරු කෝඩ් එක මෙතනින් පහළට සාමාන්‍ය විදියට තියන්න)
-
-# ... (ඔයාගේ ඉතුරු කෝඩ් එක මෙතනින් පහළට එහෙමම තියන්න)
-
 TELEGRAM_BOT_TOKEN = "8524773131:AAG7YAYrzt9HYu34UhUJ0af_TDamhyndBas"
 CHANNEL_ID = "-1003731551541"
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWlMq--iOTVBE4BA"
 
 # --- CONFIGURATION ---
-START_HOUR = 7   # 07:00 AM
-END_HOUR = 21    # 09:00 PM
+START_HOUR = 7   
+END_HOUR = 21    
 MAX_DAILY_SIGNALS = 8
 DATA_FILE = "bot_data.json"
 RISK_PER_TRADE_ROI = 60 
@@ -78,7 +36,7 @@ RISK_PER_TRADE_ROI = 60
 # Setup Gemini AI
 try:
     genai.configure(api_key=GEMINI_API_KEY)
-    # අපි මුලින්ම Flash දාලා බලමු, මේක වැඩ කරාට පස්සේ Pro දාමු.
+    # අපි Flash මොඩල් එක පාවිච්චි කරමු (මේක අනිවාර්යයෙන්ම වැඩ)
     model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
     st.error(f"Gemini Setup Error: {e}")
