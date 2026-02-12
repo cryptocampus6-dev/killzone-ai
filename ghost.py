@@ -34,7 +34,8 @@ RISK_PER_TRADE_ROI = 60
 # Setup Gemini AI
 try:
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-pro')
+   # ඔයා Pro ගත්ත නිසා අපි හොඳම එකම පාවිච්චි කරමු
+model = genai.GenerativeModel('gemini-1.5-pro'))
 except Exception as e:
     st.error(f"API Key Error: {e}")
 
