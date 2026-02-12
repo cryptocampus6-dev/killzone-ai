@@ -1,24 +1,49 @@
+import streamlit as st
 import sys
 import subprocess
+import os
 
-# ==========================================================
-# 🚀 FORCE UPDATE: බලෙන්ම අලුත් Gemini Library එක දාගැනීම
-# ==========================================================
-try:
-    # මේකෙන් අපි මැෂින් එකට අන දෙනවා අලුත්ම එක Install කරන්න කියලා
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "google-generativeai"])
-except Exception as e:
-    print(f"Update Error: {e}")
+# ==============================================================================
+# 🧨 THE NUCLEAR FIX: DYNAMIC MEMORY RELOAD
+# ==============================================================================
+# මේ Function එකෙන් පරණ Library එක මෙමරි එකෙන් මකලා අලුත් එක දානවා
+def install_and_load_gemini():
+    try:
+        import google.generativeai as genai
+        # Version එක පරීක්ෂා කරමු. 0.7.0 ට අඩු නම් Error එකක් ගමු
+        version = genai.__version__
+        if int(version.split('.')[1]) < 7:
+            raise ImportError
+        return genai
+    except (ImportError, AttributeError, IndexError):
+        placeholder = st.empty()
+        placeholder.warning("⚠️ Updating AI Brain... Please wait 30 seconds...")
+        
+        # 1. Force Install
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "google-generativeai>=0.7.0"])
+        
+        # 2. CLEAR MEMORY CACHE (මේක තමයි රහස!)
+        if "google.generativeai" in sys.modules:
+            del sys.modules["google.generativeai"]
+        if "google" in sys.modules:
+            del sys.modules["google"]
+            
+        # 3. Re-Import
+        import google.generativeai as genai
+        placeholder.success("✅ AI Brain Updated! Restarting...")
+        time.sleep(2)
+        placeholder.empty()
+        return genai
 
-# දැන් අනිත් Library ටික Import කරමු
-import streamlit as st
-import google.generativeai as genai
+# අනිත් Library Import කරන්න කලින් AI එක ලෝඩ් කරමු
+import time # Time ඕන වෙනවා උඩ function එකට
+genai = install_and_load_gemini()
+
+# දැන් අනිත් සාමාන්‍ය Imports
 import pandas as pd
 import pandas_ta as ta
-import time
 import requests
 import pytz
-import os
 import json
 import yfinance as yf
 import matplotlib
@@ -32,8 +57,10 @@ from datetime import datetime
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 except:
-    st.error("API Key not found! Please check Secrets.")
+    st.error("API Key not found in Secrets!")
     st.stop()
+
+# ... (ඔයාගේ ඉතුරු කෝඩ් එක මෙතනින් පහළට සාමාන්‍ය විදියට තියන්න)
 
 # ... (ඔයාගේ ඉතුරු කෝඩ් එක මෙතනින් පහළට එහෙමම තියන්න)
 
