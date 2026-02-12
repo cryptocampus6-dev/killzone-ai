@@ -19,7 +19,7 @@ from datetime import datetime
 # 🔐 USER SETTINGS
 # ==============================================================================
 # ඔයාගේ අලුත්ම Key එක මෙතනට දැම්මා
-GEMINI_API_KEY = "AIzaSyCkEHLkCuoJEd7fPYax5RlD-1PjjjQcnTU" 
+GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 TELEGRAM_BOT_TOKEN = "8524773131:AAG7YAYrzt9HYu34UhUJ0af_TDamhyndBas"
 CHANNEL_ID = "-1003731551541"
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWlMq--iOTVBE4BA"
