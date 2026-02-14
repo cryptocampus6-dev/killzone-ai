@@ -53,8 +53,20 @@ def load_data():
         try:
             with open(DATA_FILE, "r") as f:
                 data = json.load(f)
+                # Ensure missing keys are added from default
+                for key, value in default.items():
+                    if key not in data:
+                        data[key] = value
+                
                 if data.get("last_reset_date") != datetime.now(lz).strftime("%Y-%m-%d"):
-                    data.update({"daily_count": 0, "signaled_coins": [], "last_reset_date": datetime.now(lz).strftime("%Y-%m-%d"), "sent_morning": False, "sent_goodbye": False, "scan_log": ""})
+                    data.update({
+                        "daily_count": 0, 
+                        "signaled_coins": [], 
+                        "last_reset_date": datetime.now(lz).strftime("%Y-%m-%d"), 
+                        "sent_morning": False, 
+                        "sent_goodbye": False, 
+                        "scan_log": ""
+                    })
                     with open(DATA_FILE, "w") as fw: json.dump(data, fw)
                 if len(data.get("coins", [])) < 50:
                     data["coins"] = default_coins
@@ -64,7 +76,12 @@ def load_data():
     return default
 
 def save_full_state():
-    serializable_data = {k: v for k, v in st.session_state.items() if k in ["bot_active", "daily_count", "last_reset_date", "signaled_coins", "history", "last_scan_block_id", "sent_morning", "sent_goodbye", "scan_log", "force_scan", "coins"]}
+    # Explicitly save all keys to avoid missing attribute errors
+    serializable_data = {k: v for k, v in st.session_state.items() if k in [
+        "bot_active", "daily_count", "last_reset_date", "signaled_coins", 
+        "history", "last_scan_block_id", "sent_morning", "sent_goodbye", 
+        "scan_log", "force_scan", "coins"
+    ]}
     with open(DATA_FILE, "w") as f: json.dump(serializable_data, f)
 
 # --- TELEGRAM ---
@@ -171,8 +188,15 @@ def format_vip_message(coin, sig, price, sl, tps, leverage):
 # MAIN UI
 # ==============================================================================
 saved_data = load_data()
+# Explicitly initialize session state variables to prevent AttributeError
 for k, v in saved_data.items():
     if k not in st.session_state: st.session_state[k] = v
+
+# Ensure critical flags exist in session state even if load_data didn't set them
+if "sent_goodbye" not in st.session_state: st.session_state.sent_goodbye = False
+if "sent_morning" not in st.session_state: st.session_state.sent_morning = False
+if "force_scan" not in st.session_state: st.session_state.force_scan = False
+if "last_scan_block_id" not in st.session_state: st.session_state.last_scan_block_id = -1
 
 st.sidebar.title("🎛️ Control Panel")
 current_time = datetime.now(lz)
