@@ -7,9 +7,7 @@ import pytz
 import os
 import json
 import yfinance as yf
-import matplotlib
-matplotlib.use('Agg')
-# mplfinance ඉවත් කළා (AI ඇහැ නැති නිසා චාර්ට් අඳින්න ඕනේ නෑ)
+# matplotlib and mplfinance removed as chart generation for vision is no longer needed
 from datetime import datetime
 
 # ==============================================================================
@@ -83,13 +81,14 @@ def send_telegram(msg, is_sticker=False):
 def get_data(symbol):
     try:
         ticker = f"{symbol}-USD"
-        # Logic එකට ටිකක් වැඩිපුර Data ඕනේ නිසා Period එක 5d කළා
+        # Increased period to 5d to ensure enough data for indicators
         df = yf.download(ticker, period="5d", interval="15m", progress=False) 
         if df.empty: return pd.DataFrame()
         df = df.reset_index()
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.droplevel(1)
         df.columns = [str(c) for c in df.columns]
-        df = df.rename(columns={'Datetime': 'Date', 'index': 'Date'})
+        if 'Datetime' in df.columns: df = df.rename(columns={'Datetime': 'Date'})
+        elif 'index' in df.columns: df = df.rename(columns={'index': 'Date'}) # Handle different index names
         if 'Date' in df.columns: df = df.set_index('Date')
         
         # Numeric Check
@@ -103,9 +102,10 @@ def get_data(symbol):
 # ==============================================================================
 # 🧠 LOGIC ENGINE (Replaces AI Vision)
 # ==============================================================================
-# AI ඇහැ ඉවත් කර, ගණිතමය මොළය සවි කරන ලදී.
+# AI ඇහැ ඉවත් කර, ගණිතමය මොළය (Logic) සවි කරන ලදී.
 def analyze_with_vision(df, coin_name):
-    if len(df) < 50: return "NEUTRAL", 0, 0, 0, 0, 0, "Not enough data", None
+    # Ensure enough data for calculation
+    if len(df) < 200: return "NEUTRAL", 0, 0, 0, 0, 0, "Not enough data", None
 
     # 1. Indicators ගණනය කිරීම
     df['RSI'] = ta.rsi(df['Close'], length=14)
