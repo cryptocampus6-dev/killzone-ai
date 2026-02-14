@@ -14,7 +14,7 @@ from datetime import datetime
 # 🔐 USER SETTINGS (NO API KEY NEEDED NOW)
 # ==============================================================================
 TELEGRAM_BOT_TOKEN = "8524773131:AAG7YAYrzt9HYu34UhUJ0af_TDamhyndBas"
-CHANNEL_ID = " -1003534299054"
+CHANNEL_ID = "-1003534299054"
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWlMq--iOTVBE4BA"
 
 START_HOUR = 7   
