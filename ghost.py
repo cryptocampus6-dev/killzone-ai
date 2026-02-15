@@ -9,19 +9,19 @@ import json
 import yfinance as yf
 import matplotlib
 matplotlib.use('Agg')
-import mplfinance as mpf # Vision සදහා Chart අඳින්න ඕනේ
+import mplfinance as mpf 
 import base64
 from datetime import datetime
 import re
 
 # ==============================================================================
-# 🔐 USER SETTINGS (GEMINI DIRECT API)
+# 🔐 USER SETTINGS (GEMINI VISION - PRO MODEL)
 # ==============================================================================
-# ඔයා කලින් දුන්න Gemini Key එක (මේක වැඩ නැත්නම් අලුත් එකක් දාගන්න)
+# 👇 ඔයාගේ අලුත් API Key එක මේ උඩරට කොමා ඇතුලට Paste කරන්න (AIza... එක)
 GEMINI_API_KEY = "AIzaSyAamFhulobiwypsDB7HMS8Qxh1j6dfYnUQ" 
 
 TELEGRAM_BOT_TOKEN = "8524773131:AAG7YAYrzt9HYu34UhUJ0af_TDamhyndBas"
-CHANNEL_ID = "-1003534299054"
+CHANNEL_ID = "-1003731551541"
 STICKER_ID = "CAACAgUAAxkBAAEQZgNpf0jTNnM9QwNCwqMbVuf-AAE0x5oAAvsKAAIWG_BWlMq--iOTVBE4BA"
 
 START_HOUR = 7   
@@ -38,12 +38,14 @@ def load_data():
     default = {
         "bot_active": False, "daily_count": 0, "last_reset_date": datetime.now(lz).strftime("%Y-%m-%d"),
         "signaled_coins": [], "history": [], "coins": default_coins,
-        "sent_morning": False, "sent_goodbye": False, "force_scan": False
+        "sent_morning": False, "sent_goodbye": False, "force_scan": False,
+        "scan_log": "", "last_scan_block_id": -1
     }
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r") as f:
                 data = json.load(f)
+                # Missing keys fix
                 for key, val in default.items():
                     if key not in data: data[key] = val
                 return data
@@ -54,7 +56,7 @@ def save_full_state():
     serializable_data = {k: v for k, v in st.session_state.items() 
                         if k in ["bot_active", "daily_count", "last_reset_date", 
                                  "signaled_coins", "history", "coins", 
-                                 "sent_morning", "sent_goodbye", "force_scan"]}
+                                 "sent_morning", "sent_goodbye", "force_scan", "scan_log", "last_scan_block_id"]}
     with open(DATA_FILE, "w") as f: json.dump(serializable_data, f)
 
 # --- TELEGRAM ---
@@ -110,7 +112,7 @@ def get_data(symbol):
     except: return pd.DataFrame()
 
 # ==============================================================================
-# 👁️ GEMINI DIRECT API VISION (The New Robust Eye)
+# 👁️ GEMINI DIRECT API VISION (FIXED MODEL: gemini-pro-vision)
 # ==============================================================================
 def generate_chart_image(df, coin_name):
     filename = f"temp_chart_{coin_name}.png"
@@ -118,23 +120,20 @@ def generate_chart_image(df, coin_name):
         if len(df) < 50: return None
         mc = mpf.make_marketcolors(up='#00FF00', down='#FF0000', inherit=True)
         s = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True)
-        # Chart එක අඳිනවා
         mpf.plot(df.tail(60), type='candle', style=s, volume=False, savefig=filename, figsize=(10, 6))
         return filename
     except: return None
 
 def analyze_with_gemini_vision(df, coin_name):
-    # 1. Chart එක හදනවා
     chart_path = generate_chart_image(df, coin_name)
     if not chart_path: return "NEUTRAL", 0, 0, 0, [], 0, "Chart Gen Error"
 
     try:
-        # 2. Image එක Base64 වලට හරවනවා
         with open(chart_path, "rb") as image_file:
             image_data = base64.b64encode(image_file.read()).decode('utf-8')
 
-        # 3. DIRECT API REQUEST (No Library)
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+        # 👇 FIXED URL: gemini-pro-vision
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent?key={GEMINI_API_KEY}"
         headers = {'Content-Type': 'application/json'}
         
         prompt = """
@@ -157,33 +156,32 @@ def analyze_with_gemini_vision(df, coin_name):
             }]
         }
         
-        # 4. Google එකට යවනවා
-        response = requests.post(url, headers=headers, json=payload, timeout=15)
+        response = requests.post(url, headers=headers, json=payload, timeout=20)
         
-        # File එක මකනවා (Clean up)
         if os.path.exists(chart_path): os.remove(chart_path)
 
         if response.status_code == 200:
             result = response.json()
-            text_response = result['candidates'][0]['content']['parts'][0]['text']
-            
-            # JSON Clean up
-            match = re.search(r'\{.*\}', text_response, re.DOTALL)
-            if match:
-                data = json.loads(match.group().replace("'", '"'))
-                sig = data.get("signal", "NEUTRAL")
-                score = int(data.get("score", 0))
-                reason = data.get("reason", "AI Vision Scan")
-            else:
-                return "NEUTRAL", 0, 0, 0, [], 0, "AI Parse Error"
+            try:
+                text_response = result['candidates'][0]['content']['parts'][0]['text']
+                match = re.search(r'\{.*\}', text_response, re.DOTALL)
+                if match:
+                    data = json.loads(match.group().replace("'", '"'))
+                    sig = data.get("signal", "NEUTRAL")
+                    score = int(data.get("score", 0))
+                    reason = data.get("reason", "AI Vision Scan")
+                else:
+                    return "NEUTRAL", 0, 0, 0, [], 0, "AI Parse Error"
+            except:
+                 return "NEUTRAL", 0, 0, 0, [], 0, "AI No Candidate"
         else:
             return "NEUTRAL", 0, 0, 0, [], 0, f"API Error {response.status_code}"
 
     except Exception as e:
         if os.path.exists(chart_path): os.remove(chart_path)
-        return "NEUTRAL", 0, 0, 0, [], 0, f"Connect Error"
+        return "NEUTRAL", 0, 0, 0, [], 0, "Connect Error"
 
-    # 5. Technical Levels Calculation (Logic)
+    # Technical Levels
     curr_price = df['Close'].iloc[-1]
     atr = (df['High'].iloc[-1] - df['Low'].iloc[-1])
     risk = atr * 2
@@ -205,6 +203,10 @@ def analyze_with_gemini_vision(df, coin_name):
 saved_data = load_data()
 for k, v in saved_data.items():
     if k not in st.session_state: st.session_state[k] = v
+
+# Session state initialization fix
+if "sent_goodbye" not in st.session_state: st.session_state.sent_goodbye = False
+if "sent_morning" not in st.session_state: st.session_state.sent_morning = False
 
 st.sidebar.title("🎛️ Control Panel")
 status_color = "green" if st.session_state.bot_active else "red"
@@ -248,7 +250,7 @@ tab1, tab2 = st.tabs(["📊 Vision Scanner", "📜 Signal History"])
 
 with tab1:
     if st.session_state.bot_active:
-        st.markdown("### 👁️ AI Scanning with Gemini Vision...")
+        st.markdown("### 👁️ AI Scanning with Gemini Vision (Pro)...")
         progress_bar = st.progress(0)
         status_area = st.empty()
         
@@ -277,7 +279,7 @@ with tab1:
                 st.rerun()
             
             progress_bar.progress((i + 1) / len(st.session_state.coins))
-            time.sleep(1) # API Limit නොවදින්න පොඩි Break එකක්
+            time.sleep(1) 
     else:
         st.info("⚠️ Bot is Stopped. Click START to begin.")
 
