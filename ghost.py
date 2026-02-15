@@ -18,7 +18,7 @@ import re
 # 🔐 USER SETTINGS (GEMINI DIRECT API)
 # ==============================================================================
 # ඔයා කලින් දුන්න Gemini Key එක (මේක වැඩ නැත්නම් අලුත් එකක් දාගන්න)
-GEMINI_API_KEY = "AIzaSyCvA7b6KoykQH8NBMUivgb__5IvaXkfz7k" 
+GEMINI_API_KEY = "AIzaSyAamFhulobiwypsDB7HMS8Qxh1j6dfYnUQ" 
 
 TELEGRAM_BOT_TOKEN = "8524773131:AAG7YAYrzt9HYu34UhUJ0af_TDamhyndBas"
 CHANNEL_ID = "-1003731551541"
